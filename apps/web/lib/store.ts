@@ -77,6 +77,7 @@ type QuestionRow = {
   webhook_url: string | null;
   webhook_origin: string | null;
   webhook_state: string | null;
+  closed_at: string | null;
 };
 
 type SubmissionRow = {
@@ -239,12 +240,13 @@ function migrate(conn: DatabaseSync) {
   for (const col of ["payer_address", "payment_tx", "refund_tx", "market_ref", "webhook_url", "webhook_origin", "webhook_state"]) {
     if (!cols.has(col)) conn.exec(`alter table questions add column ${col} text`);
   }
+  if (!cols.has("closed_at")) conn.exec("alter table questions add column closed_at text");
   const obsCols = new Set((conn.prepare("pragma table_info(observers)").all() as { name: string }[]).map((c) => c.name));
   if (!obsCols.has("xrpl_address")) conn.exec("alter table observers add column xrpl_address text");
   if (!obsCols.has("payout_rail")) conn.exec("alter table observers add column payout_rail text not null default 'evm'");
 }
 
-function db(): DatabaseSync {
+export function db(): DatabaseSync {
   if (!g.__aeyeDb) {
     const file = process.env.A_EYE_DB_PATH ?? path.join(process.cwd(), ".data", "a-eye.db");
     if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
@@ -516,7 +518,7 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
   };
 }
 
-const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
+export const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
 
 // ---------- observer stats & leaderboard ----------
 
@@ -776,7 +778,9 @@ export async function closeNow(id: string) {
  * requests (or two processes) can never both draw a winner.
  */
 async function settle(id: string) {
-  const claim = db().prepare("update questions set status = 'closed' where id = ? and status = 'open'").run(id);
+  const claim = db()
+    .prepare("update questions set status = 'closed', closed_at = ? where id = ? and status = 'open'")
+    .run(new Date().toISOString(), id);
   if (claim.changes !== 1) return false;
   const q = questionById(id)!;
   const subs = submissionsFor(id);
