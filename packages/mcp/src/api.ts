@@ -5,6 +5,7 @@ import type {
   QuestionResults,
   QuestionSummary,
 } from "@a-eye/shared";
+import { paymentTxFromHeaders } from "./payments.js";
 
 export class ApiError extends Error {
   constructor(
@@ -22,9 +23,14 @@ export class AEyeApi {
     private readonly baseUrl: string,
     private readonly fetchImpl: FetchLike = fetch,
     private readonly agentLabel: string = "mcp-agent",
+    private readonly paysAutomatically = false,
   ) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    return (await this.requestWithHeaders<T>(path, init)).data;
+  }
+
+  private async requestWithHeaders<T>(path: string, init?: RequestInit) {
     const res = await this.fetchImpl(new URL(path, this.baseUrl).toString(), {
       ...init,
       headers: { "content-type": "application/json", "x-a-eye-agent": this.agentLabel, ...init?.headers },
@@ -33,13 +39,22 @@ export class AEyeApi {
     if (!res.ok) {
       const message =
         body && typeof body === "object" && "error" in body ? String(body.error) : `${res.status} ${res.statusText}`;
-      throw new ApiError(res.status, message);
+      throw new ApiError(
+        res.status,
+        res.status === 402 && !this.paysAutomatically
+          ? `${message}. Set AGENT_PRIVATE_KEY (a Base Sepolia wallet holding AUSD) so the MCP server can pay via x402.`
+          : message,
+      );
     }
-    return body as T;
+    return { data: body as T, headers: res.headers };
   }
 
-  askQuestion(input: CreateQuestionInput) {
-    return this.request<CreateQuestionResponse>("/api/questions", { method: "POST", body: JSON.stringify(input) });
+  async askQuestion(input: CreateQuestionInput): Promise<CreateQuestionResponse> {
+    const { data, headers } = await this.requestWithHeaders<CreateQuestionResponse>("/api/questions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) };
   }
 
   getResults(questionId: string) {

@@ -14,6 +14,7 @@ import {
 } from "@a-eye/shared";
 import { distanceM } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
+import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
 
@@ -26,6 +27,9 @@ import { tally } from "./tally";
 type QuestionRow = {
   id: string;
   agent_label: string;
+  payer_address: string | null;
+  payment_tx: string | null;
+  refund_tx: string | null;
   prompt: string;
   options: string;
   allow_free_text: number;
@@ -103,7 +107,10 @@ create table if not exists questions (
   status text not null default 'open',
   seed text not null,
   seed_commit text not null,
-  web_baseline text
+  web_baseline text,
+  payer_address text,
+  payment_tx text,
+  refund_tx text
 );
 create index if not exists questions_status_idx on questions(status, closes_at);
 create index if not exists questions_geo_idx on questions(lat, lng);
@@ -135,6 +142,14 @@ create table if not exists raffles (
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
+/** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
+function migrate(conn: DatabaseSync) {
+  const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
+  for (const col of ["payer_address", "payment_tx", "refund_tx"]) {
+    if (!cols.has(col)) conn.exec(`alter table questions add column ${col} text`);
+  }
+}
+
 function db(): DatabaseSync {
   if (!g.__aeyeDb) {
     const file = process.env.A_EYE_DB_PATH ?? path.join(process.cwd(), ".data", "a-eye.db");
@@ -142,6 +157,7 @@ function db(): DatabaseSync {
     const conn = new DatabaseSync(file);
     conn.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
     conn.exec(SCHEMA);
+    migrate(conn);
     const { n } = conn.prepare("select count(*) as n from questions").get() as { n: number };
     if (n === 0) seed(conn);
     g.__aeyeDb = conn;
@@ -217,15 +233,20 @@ export function observerEntries(observerId: string) {
 
 // ---------- questions ----------
 
-export function createQuestion(input: CreateQuestionInput, agentLabel = "unpaid-dev-agent") {
+export function createQuestion(
+  input: CreateQuestionInput,
+  agentLabel = "unpaid-dev-agent",
+  payment?: { payer: string; tx: string | null },
+) {
   const { seed: s, commit } = newSeed();
   const now = Date.now();
   const id = shortId();
   db()
     .prepare(
       `insert into questions (id, agent_label, prompt, options, allow_free_text, place_label, lat, lng, radius_m,
-         prize_amount, currency, min_responses, max_responses, closes_at, created_at, status, seed, seed_commit)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?)`,
+         prize_amount, currency, min_responses, max_responses, closes_at, created_at, status, seed, seed_commit,
+         payer_address, payment_tx)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -244,6 +265,8 @@ export function createQuestion(input: CreateQuestionInput, agentLabel = "unpaid-
       new Date(now).toISOString(),
       s,
       commit,
+      payment?.payer ?? null,
+      payment?.tx ?? null,
     );
   return id;
 }
@@ -469,8 +492,12 @@ async function settle(id: string) {
   const q = questionById(id)!;
   const subs = submissionsFor(id);
   if (subs.length < q.min_responses) {
-    // TODO(milestone 3): refund the agent's AUSD payment.
     db().prepare("update questions set status = 'expired' where id = ?").run(id);
+    // Only questions that were actually paid over x402 are refunded.
+    if (q.payment_tx && q.payer_address) {
+      const refund = await sendFromTreasury("refund", q.payer_address, prizeUnits(q.prize_amount));
+      if (refund) db().prepare("update questions set refund_tx = ? where id = ?").run(refund, id);
+    }
     return true;
   }
   const block = await latestBlock();
@@ -482,9 +509,22 @@ async function settle(id: string) {
        values (?, ?, ?, ?, ?)`,
     )
     .run(id, q.seed, entropy, block?.number ?? null, draw?.winner ?? null);
-  // TODO(milestone 3): treasury pays the winner in AUSD on Base Sepolia, store payout_tx.
   db().prepare("update questions set status = 'settled' where id = ?").run(id);
+  if (q.payment_tx && draw?.winner) await payWinner(id, draw.winner, q.prize_amount);
   return true;
+}
+
+/** Treasury pays the raffle winner (prize minus the platform fee) to their EVM payout address. */
+async function payWinner(questionId: string, winnerSubmissionId: string, prizeUsd: number) {
+  const winner = db()
+    .prepare("select o.evm_address from submissions s join observers o on o.id = s.observer_id where s.id = ?")
+    .get(winnerSubmissionId) as { evm_address: string | null } | undefined;
+  if (!winner?.evm_address) {
+    console.warn(`[payments] winner of ${questionId} has no payout address; payout pending`);
+    return;
+  }
+  const tx = await sendFromTreasury("payout", winner.evm_address, winnerPayoutUnits(prizeUsd));
+  if (tx) db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
 }
 
 // ---------- seed data (mock demo questions around the UC Berkeley campus) ----------
