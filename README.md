@@ -377,4 +377,22 @@ The Gemini oracle attaches `market_ref` (provider, contract, `implied_yes`) to e
 | 2:35–2:45 | Show the payout transaction on BaseScan when the question was paid, the winner has an EVM wallet, and the treasury is funded. | With no winner wallet or a failed/unfunded transfer, payout remains pending; use unpaid mode only to demo the raffle, not an on-chain payout. |
 | 2:45–3:00 | Run the Gemini oracle: `npm run oracle -w @a-eye/demo-agent -- --minutes 10 --dry-run`. It compares a market with crowd YES answers and reports a sandbox-order decision. | If Gemini has no observable candidate or credentials, run `npm run oracle -w @a-eye/demo-agent -- --list` and describe the sandbox-only order path; keep `--dry-run` for a safe demo. |
 
+### Hackathon traction seed
+
+Preview the Chou Hall and Haas courtyard question seeds against the hosted API without posting:
+
+```bash
+npx tsx scripts/seed-traction.mts
+```
+
+To post and pay for the non-duplicate questions, set `A_EYE_AGENT_PRIVATE_KEY` and explicitly pass `--live`:
+
+```bash
+npx tsx scripts/seed-traction.mts --live
+```
+
+Use `--only 1,3` to select seed indices and `--max-spend 0.1` to set the spend cap. The script skips matching open questions and enforces the cap after skips.
+
+Printable QR poster, table tent and the hackathon invite copy live in [`docs/poster/`](docs/poster/README.md).
+
 The oracle command uses `--dry-run` for safety. Remove that flag only for an intentionally placed Gemini sandbox order.
