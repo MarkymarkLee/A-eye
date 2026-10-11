@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowRight, BadgeCheck, Bell, Camera, ChevronRight, Clock, Trophy, Wallet } from "lucide-react";
+import { ArrowRight, BadgeCheck, Bell, Camera, ChevronRight, Coins, Flame, Target, Trophy, Wallet } from "lucide-react";
 import { ago } from "@/lib/time";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
@@ -12,6 +12,8 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Disclosure } from "./ui/disclosure";
 import { EmptyState } from "./ui/empty-state";
+import type { ObserverStats } from "@/lib/reputation";
+import { BadgeGrid, pct } from "./badges";
 import { PushOptIn } from "./push-opt-in";
 import { Skeleton } from "./ui/skeleton";
 
@@ -36,7 +38,7 @@ type Entry = {
 
 export function MeView() {
   const reduce = useReducedMotion();
-  const [me, setMe] = useState<{ observer: Observer; entries: Entry[]; xrpl?: Xrpl } | null>(null);
+  const [me, setMe] = useState<{ observer: Observer; entries: Entry[]; stats?: ObserverStats; xrpl?: Xrpl } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState("");
   const [wallet, setWallet] = useState("");
@@ -81,7 +83,6 @@ export function MeView() {
 
   const entries = me?.entries ?? [];
   const wins = entries.filter((e) => e.won);
-  const pending = entries.filter((e) => e.status === "open").length;
   const hasWallet = Boolean(me?.observer.evm_address || me?.observer.xrpl_address);
 
   return (
@@ -97,11 +98,50 @@ export function MeView() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-2">
-          <Stat icon={<Camera className="size-4" aria-hidden />} label="Answers" value={me ? entries.length : undefined} />
-          <Stat icon={<Clock className="size-4" aria-hidden />} label="Draws pending" value={me ? pending : undefined} />
-          <Stat icon={<Trophy className="size-4" aria-hidden />} label="Wins" value={me ? wins.length : undefined} hot={wins.length > 0} />
-        </div>
+        <dl className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3">
+          <Stat icon={<Camera className="size-4" aria-hidden />} label="Verified answers" value={me ? (me.stats?.verified_answers ?? entries.length) : undefined} />
+          <Stat
+            icon={<Trophy className="size-4" aria-hidden />}
+            label="Questions won"
+            value={me ? (me.stats?.questions_won ?? wins.length) : undefined}
+            hot={(me?.stats?.questions_won ?? wins.length) > 0}
+          />
+          <Stat icon={<Coins className="size-4" aria-hidden />} label="AUSD earned" value={me ? (me.stats?.ausd_earned ?? 0) : undefined} />
+          <Stat
+            icon={<Flame className="size-4" aria-hidden />}
+            label="Day streak"
+            value={me ? (me.stats?.current_streak ?? 0) : undefined}
+            hint={me?.stats && me.stats.best_streak > me.stats.current_streak ? `Best ${me.stats.best_streak}` : undefined}
+          />
+          <Stat
+            icon={<Target className="size-4" aria-hidden />}
+            label="Agreement"
+            value={me ? pct(me.stats?.agreement_rate ?? null) : undefined}
+            hint={
+              me?.stats && me.stats.agreement_scored > 0
+                ? `${me.stats.agreement_agreed} of ${me.stats.agreement_scored} closed`
+                : "After a question closes"
+            }
+            wide
+          />
+        </dl>
+
+        {me?.stats && (
+          <div className="mt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-[16px] font-semibold tracking-tight">Badges</h2>
+              <Link
+                href="/leaderboard"
+                className="inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-[14px] font-semibold text-accent-ink hover:underline"
+              >
+                Leaderboard <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </div>
+            <div className="mt-3">
+              <BadgeGrid badges={me.stats.badges} />
+            </div>
+          </div>
+        )}
 
         {loadError ? (
           <p className="mt-8 rounded-[14px] bg-bad-soft px-3.5 py-3 text-[14px] text-bad">
@@ -297,18 +337,41 @@ function EntryBadge({ e }: { e: Entry }) {
   return <Badge>Not this time</Badge>;
 }
 
-function Stat({ icon, label, value, hot }: { icon: React.ReactNode; label: string; value?: number; hot?: boolean }) {
+function Stat({
+  icon,
+  label,
+  value,
+  hint,
+  hot,
+  wide,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: number | string;
+  hint?: string;
+  hot?: boolean;
+  wide?: boolean;
+}) {
   return (
-    <div className={cn("rounded-[18px] p-3.5", hot ? "bg-accent-soft text-accent-ink" : "bg-surface ring-1 ring-line")}>
-      <span className={cn("flex items-center gap-1.5 text-[12px] font-medium", hot ? "" : "text-muted")}>
+    <div
+      className={cn(
+        "rounded-[18px] p-3.5",
+        hot ? "bg-accent-soft text-accent-ink" : "bg-surface ring-1 ring-line",
+        wide && "col-span-2 sm:col-span-1 md:col-span-2 lg:col-span-1",
+      )}
+    >
+      <dt className={cn("flex items-center gap-1.5 text-[12px] font-medium", hot ? "" : "text-muted")}>
         {icon}
         {label}
-      </span>
+      </dt>
       {value === undefined ? (
-        <Skeleton className="mt-2 h-6 w-8" />
+        <dd>
+          <Skeleton className="mt-2 h-6 w-8" />
+        </dd>
       ) : (
-        <span className="mt-1 block text-[24px] font-bold tabular-nums tracking-tight">{value}</span>
+        <dd className="mt-1 block text-[24px] font-bold tabular-nums tracking-tight">{value}</dd>
       )}
+      {hint && <dd className={cn("mt-0.5 text-[12px]", hot ? "" : "text-muted")}>{hint}</dd>}
     </div>
   );
 }

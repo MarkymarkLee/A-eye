@@ -2,14 +2,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { Bot, Map, UserRound, type LucideIcon } from "lucide-react";
+import { Bot, Map, Radio, Trophy, UserRound, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
 
 /** Single source of navigation for the header (desktop) and the bottom tab bar (mobile). */
-export const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
+export const LINKS: { href: string; label: string; short?: string; icon: LucideIcon }[] = [
   { href: "/", label: "Nearby", icon: Map },
-  { href: "/agents", label: "For agents", icon: Bot },
+  { href: "/agents", label: "For agents", short: "Agents", icon: Bot },
+  { href: "/live", label: "Live", icon: Radio },
+  { href: "/leaderboard", label: "Leaderboard", short: "Top", icon: Trophy },
   { href: "/me", label: "Me", icon: UserRound },
 ];
 
@@ -76,7 +78,7 @@ export function TabBar() {
                   />
                 )}
                 <Icon aria-hidden className={cn("relative size-[22px]", active && "text-accent-ink")} strokeWidth={active ? 2.4 : 2} />
-                <span className="relative mt-1">{l.label}</span>
+                <span className="relative mt-1">{l.short ?? l.label}</span>
               </Link>
             </li>
           );

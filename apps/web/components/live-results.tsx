@@ -3,9 +3,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, CircleCheck, CircleX, Copy, Globe, ImageIcon, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
+import { ArrowLeft, Camera, Check, CircleCheck, CircleX, Copy, Globe, ImageIcon, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
 import type { Evidence, QuestionResults } from "@a-eye/shared";
+import { marketVsHumans, webVsHumans } from "@/lib/compare";
 import { formatDistance } from "@/lib/geo";
+import { raffleSnippet } from "@/lib/raffle-snippet";
 import { ago, clockTime } from "@/lib/time";
 import { cn } from "@/lib/cn";
 import { Morph } from "./motion/page";
@@ -95,23 +97,7 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
             </div>
           </Card>
 
-          {r.web_baseline && (
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div className="rounded-[18px] bg-surface-2 p-4">
-                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-wide text-muted">
-                  <Globe className="size-3.5" aria-hidden /> The internet
-                </p>
-                <p className="mt-1.5 text-[15px] leading-snug">{r.web_baseline.answer}</p>
-                <p className="mt-1 truncate text-[12px] text-muted">{r.web_baseline.source}</p>
-              </div>
-              <div className="rounded-[18px] bg-accent-soft p-4">
-                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-wide text-accent-ink">
-                  <Camera className="size-3.5" aria-hidden /> People there
-                </p>
-                <p className="mt-1.5 text-[15px] font-semibold leading-snug">{r.responses ? leader(r) : "Waiting for answers"}</p>
-              </div>
-            </div>
-          )}
+          <Comparison r={r} />
 
           {open && (
             <div className="mt-6 flex flex-wrap gap-2">
@@ -214,17 +200,13 @@ function Photo({ e, i, winner, onOpen }: { e: Evidence; i: number; winner: boole
         <p className="text-[14.5px] font-semibold leading-snug">{e.answer}</p>
         {e.free_text && <p className="mt-0.5 line-clamp-2 text-[13.5px] leading-snug text-muted">&ldquo;{e.free_text}&rdquo;</p>}
         <p className="mt-0.5 text-[12.5px] text-muted">
-          {e.observer} · {ago(e.captured_at)}
+          <span suppressHydrationWarning>{e.observer} · {ago(e.captured_at)}</span>
         </p>
       </figcaption>
     </motion.figure>
   );
 }
 
-function leader(r: QuestionResults) {
-  const top = [...r.tally].sort((a, b) => b.count - a.count)[0]!;
-  return `${top.option} (${top.pct}%)`;
-}
 
 const short = (h: string) => (h.length > 20 ? `${h.slice(0, 10)}...${h.slice(-6)}` : h);
 
@@ -244,7 +226,7 @@ function Prize({ r }: { r: QuestionResults }) {
 
   const prize = `${r.raffle.prize_amount} ${r.raffle.currency}`;
   return (
-    <div className="mt-8 grid gap-3">
+    <div id="raffle" className="mt-8 grid scroll-mt-24 gap-3">
       <Card className={cn("flex items-start gap-3.5 p-5", settled && r.raffle.winner_observer && "bg-accent-soft ring-transparent")}>
         <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-accent to-accent-2 text-white">
           <Trophy className="size-5" aria-hidden />
@@ -309,8 +291,111 @@ function Prize({ r }: { r: QuestionResults }) {
             )}
           </div>
         )}
+        {settled && r.raffle.winner_submission_id && <VerifySnippet r={r} />}
       </Disclosure>
     </div>
+  );
+}
+
+function Comparison({ r }: { r: QuestionResults }) {
+  const web = webVsHumans(r.web_baseline as Parameters<typeof webVsHumans>[0], r.tally);
+  const market = marketVsHumans(r.market_ref, r.options, r.tally);
+  if (!web && !market) return null;
+  const humans = web?.humans ? `${web.humans.option} (${web.humans.pct}%)` : "Waiting for answers";
+  return (
+    <section aria-label="The internet and the market versus people there" className="mt-3 grid gap-3">
+      {web && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-[18px] bg-surface-2 p-4">
+            <p className="flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-wide text-muted">
+              <Globe className="size-3.5" aria-hidden /> The internet
+            </p>
+            <p className="mt-1.5 text-[15px] leading-snug">{web.web_option ?? web.web}</p>
+            {web.web_option && web.web_option !== web.web && <p className="mt-1 text-[13px] leading-snug text-muted">{web.web}</p>}
+            <p className="mt-1 truncate text-[12px] text-muted">{web.source}</p>
+          </div>
+          <div className="rounded-[18px] bg-accent-soft p-4">
+            <p className="flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-wide text-accent-ink">
+              <Camera className="size-3.5" aria-hidden /> People there
+            </p>
+            <p className="mt-1.5 text-[15px] font-semibold leading-snug">{humans}</p>
+            {web.humans && (
+              <p className="mt-1 text-[12px] text-muted">
+                {r.responses} on-site {r.responses === 1 ? "photo" : "photos"}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {web?.agree !== undefined && (
+        <p
+          className={cn(
+            "flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold",
+            web.agree ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn",
+          )}
+        >
+          {web.agree ? <CircleCheck className="size-4" aria-hidden /> : <CircleX className="size-4" aria-hidden />}
+          {web.agree ? "The internet and the crowd agree" : "The crowd contradicts the internet"}
+        </p>
+      )}
+      {market && (
+        <div className="rounded-[18px] bg-surface p-4 ring-1 ring-line">
+          <p className="text-[18px] font-semibold tabular-nums tracking-tight">
+            Market {market.market_pct}% <span className="text-muted">·</span> People there{" "}
+            {market.humans_pct === null ? "–" : `${market.humans_pct}%`}
+          </p>
+          <p className="mt-1 text-[12.5px] leading-snug text-muted">
+            Chance of &ldquo;{market.yes_option}&rdquo;
+            {market.label ? ` · ${market.label}` : ""} · {market.provider}
+            {market.gap !== null && market.gap !== 0 && ` · crowd is ${Math.abs(market.gap)} pts ${market.gap > 0 ? "above" : "below"} the market`}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VerifySnippet({ r }: { r: QuestionResults }) {
+  const [copied, setCopied] = useState(false);
+  const code = raffleSnippet({
+    questionId: r.id,
+    seedReveal: r.raffle.seed_reveal!,
+    seedCommit: r.raffle.seed_commit,
+    blockHash: r.raffle.entropy_block_hash!,
+    submissionIds: r.evidence.map((e) => e.id),
+  });
+  return (
+    <details className="group mt-4 rounded-[16px] bg-surface-2 p-4 open:pb-3">
+      <summary className="cursor-pointer list-none rounded-[8px] text-[14px] font-semibold marker:hidden focus-visible:outline-2 focus-visible:outline-accent">
+        Verify it yourself <span className="font-normal text-muted group-open:hidden">· show the code</span>
+      </summary>
+      <p className="mt-2 max-w-[60ch] text-[13px] leading-relaxed text-muted">
+        Paste this into a browser console or <code className="font-mono">node</code>. It hashes the revealed seed, the block hash and the
+        question id, then picks from the sorted submission ids, exactly like the server did.
+      </p>
+      <div className="relative mt-3">
+        <pre className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed">
+          <code>{code}</code>
+        </pre>
+        <button
+          type="button"
+          onClick={async () => {
+            await navigator.clipboard?.writeText(code);
+            setCopied(true);
+            toast.success("Code copied");
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          className="absolute right-2 top-2 grid size-9 place-items-center rounded-full bg-surface text-muted ring-1 ring-line hover:text-ink"
+          aria-label="Copy verification code"
+        >
+          {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+        </button>
+      </div>
+      <p className="mt-2 break-all font-mono text-[12px] text-muted">
+        Expected winner: {r.raffle.winner_submission_id}
+        {r.raffle.winner_observer ? ` (${r.raffle.winner_observer})` : ""}
+      </p>
+    </details>
   );
 }
 
