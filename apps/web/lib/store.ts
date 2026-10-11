@@ -1,5 +1,5 @@
 import "server-only";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -252,6 +252,16 @@ create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat,
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
+export function applyPendingRestore(file: string): boolean {
+  if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
+  if (existsSync(file)) renameSync(file, `${file}.pre-restore-${Date.now()}`);
+  rmSync(`${file}-wal`, { force: true });
+  rmSync(`${file}-shm`, { force: true });
+  renameSync(`${file}.restore`, file);
+  console.info("[db] restored database from", `${file}.restore`);
+  return true;
+}
+
 /** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
 function migrate(conn: DatabaseSync) {
   const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
@@ -266,10 +276,13 @@ function migrate(conn: DatabaseSync) {
 
 export function db(): DatabaseSync {
   if (!g.__aeyeDb) {
-    const file = process.env.A_EYE_DB_PATH ?? path.join(process.cwd(), ".data", "a-eye.db");
-    if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
+    const file = process.env.A_EYE_DB_PATH ?? path.join(/* turbopackIgnore: true */ process.cwd(), ".data", "a-eye.db");
+    if (file !== ":memory:") {
+      mkdirSync(path.dirname(file), { recursive: true });
+      applyPendingRestore(file);
+    }
     const conn = new DatabaseSync(file);
-    conn.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
+    conn.exec("pragma journal_mode = wal; pragma busy_timeout = 5000; pragma synchronous = normal; pragma foreign_keys = on;");
     conn.exec(SCHEMA);
     migrate(conn);
     const { n } = conn.prepare("select count(*) as n from questions").get() as { n: number };
@@ -277,6 +290,17 @@ export function db(): DatabaseSync {
     g.__aeyeDb = conn;
   }
   return g.__aeyeDb;
+}
+
+export function dbWritable(): boolean {
+  try {
+    const conn = db();
+    conn.exec("create table if not exists _health (id integer primary key check (id = 1), checked_at text not null)");
+    conn.prepare("insert into _health (id, checked_at) values (1, ?) on conflict(id) do update set checked_at = excluded.checked_at").run(new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const shortId = () => randomUUID().replace(/-/g, "").slice(0, 10);

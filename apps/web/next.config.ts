@@ -9,6 +9,18 @@ const config: NextConfig = {
   async headers() {
     return [
       {
+        source: "/icons/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      },
+      {
+        source: "/icon.svg",
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      },
+      {
+        source: "/manifest.webmanifest",
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600" }],
+      },
+      {
         source: "/sw.js",
         headers: [
           { key: "Content-Type", value: "application/javascript; charset=utf-8" },
@@ -17,6 +29,9 @@ const config: NextConfig = {
         ],
       },
     ];
+  },
+  async rewrites() {
+    return [{ source: "/favicon.ico", destination: "/icon.svg" }];
   },
 };
 
