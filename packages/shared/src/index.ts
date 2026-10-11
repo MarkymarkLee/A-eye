@@ -92,6 +92,15 @@ export type XrplPotInfo = {
   payout_url?: string;
   cancel_tx?: string;
   cancel_url?: string;
+  /** "batch" = one all-or-nothing XLS-56 Batch; "sequential" = individual txs. */
+  settle_mode?: "batch" | "sequential";
+  batch_tx?: string;
+  batch_url?: string;
+  fee_tx?: string;
+  fee_url?: string;
+  fee_xrp?: string;
+  payout_currency?: string;
+  payout_amount?: string;
 };
 
 export type RaffleInfo = {
