@@ -289,12 +289,14 @@ export function XrplWalletSetup({ badge, onAddress }: { badge: React.ReactNode; 
                     href={status.reputation.explorer_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-0.5 inline-flex items-center gap-0.5 text-[12.5px] underline decoration-line underline-offset-4 hover:decoration-ink"
+                    className="mt-0.5 flex w-fit items-center gap-0.5 text-[12.5px] underline decoration-line underline-offset-4 hover:decoration-ink"
                   >
                     AEYE points <ExternalLink className="size-3" aria-hidden />
                   </a>
                 )}
               </>
+            ) : hasSeed && !status.rlusd.trustline ? (
+              "Adding RLUSD signs you up for these too."
             ) : hasSeed ? (
               "Tap Opt in to start collecting a point for every accepted answer."
             ) : (
@@ -304,6 +306,7 @@ export function XrplWalletSetup({ badge, onAddress }: { badge: React.ReactNode; 
           action={
             !status.reputation.opted_in &&
             hasSeed &&
+            status.rlusd.trustline &&
             status.address && (
               <Button size="sm" variant="soft" onClick={onboard} disabled={busy !== null || !status.reputation.issuance_id}>
                 <Sparkles className="size-4" aria-hidden /> {busy === "onboard" ? "Working…" : "Opt in"}
