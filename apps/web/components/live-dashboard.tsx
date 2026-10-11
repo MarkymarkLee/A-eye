@@ -2,16 +2,18 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Camera, Coins, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
+import { Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
 import type { ActivityEvent, ActivityResponse } from "@/lib/activity-types";
 import { formatDistance } from "@/lib/geo";
 import { ago, timeLeft } from "@/lib/time";
+import type { MarketComparison } from "@a-eye/shared";
+import { MarketsPanel } from "./markets-panel";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
 const OVERLAP_MS = 3 * 60_000;
 const MAX_EVENTS = 120;
-const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, question_closed: 2, raffle_reveal: 3, payout: 4 };
+const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, peek: 2, question_closed: 3, raffle_reveal: 4, payout: 5 };
 
 const order = (a: ActivityEvent, b: ActivityEvent) => Date.parse(b.at) - Date.parse(a.at) || RANK[b.type] - RANK[a.type];
 
@@ -25,7 +27,17 @@ const txUrl = (tx: string) => `https://sepolia.basescan.org/tx/${tx}`;
 const short = (h: string) => (h.length > 18 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
 const money = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
-export function LiveDashboard({ initial, qrSvg, target }: { initial: ActivityResponse; qrSvg: string; target: string }) {
+export function LiveDashboard({
+  initial,
+  initialMarkets,
+  qrSvg,
+  target,
+}: {
+  initial: ActivityResponse;
+  initialMarkets: MarketComparison[];
+  qrSvg: string;
+  target: string;
+}) {
   const [data, setData] = useState(initial);
   const [events, setEvents] = useState(() => [...initial.events].sort(order));
   const [now, setNow] = useState(() => Date.parse(initial.now));
@@ -85,10 +97,12 @@ export function LiveDashboard({ initial, qrSvg, target }: { initial: ActivityRes
         <Counter
           label="AUSD paid to humans"
           value={money(c.ausd_paid)}
-          sub={`${money(c.ausd_bounties)} AUSD in bounties · ${c.onchain_txs} on-chain tx`}
+          sub={`${money(c.ausd_bounties)} AUSD bounties · ${money(c.ausd_peeks ?? 0)} AUSD peeks · ${c.onchain_txs} on-chain tx`}
           accent
         />
       </dl>
+
+      <MarketsPanel initial={initialMarkets} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
         <aside className="space-y-6">
@@ -159,9 +173,9 @@ export function LiveDashboard({ initial, qrSvg, target }: { initial: ActivityRes
                   className={`group relative overflow-hidden rounded-[12px] bg-surface-2 ${i === 0 ? "col-span-2 row-span-2" : ""}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.thumb_url} alt={`Photo answering "${p.answer}"`} className="aspect-square size-full object-cover" />
+                  <img src={p.thumb_url} alt={p.sealed ? "Photo answer, hidden until close" : `Photo answering "${p.answer}"`} className="aspect-square size-full object-cover" />
                   <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2.5 pb-2 pt-6 text-left text-white">
-                    <span className="block truncate text-[13px] font-medium">{p.answer}</span>
+                    <span className="block truncate text-[13px] font-medium">{p.sealed ? "Answer hidden until close" : p.answer}</span>
                     <span className="block font-mono text-[11px] opacity-80">{formatDistance(p.distance_m)} away</span>
                   </span>
                 </Link>
@@ -189,6 +203,7 @@ function Counter({ label, value, sub, accent }: { label: string; value: number |
 const ICON = {
   question_asked: Robot,
   photo: Camera,
+  peek: Eye,
   question_closed: LockSimple,
   raffle_reveal: Trophy,
   payout: Coins,
@@ -197,6 +212,7 @@ const ICON = {
 const LABEL: Record<ActivityEvent["type"], string> = {
   question_asked: "Agent asked",
   photo: "Photo answer",
+  peek: "Paid peek",
   question_closed: "Question closed",
   raffle_reveal: "Raffle drawn",
   payout: "Payout",
@@ -271,13 +287,36 @@ function Body({ e }: { e: ActivityEvent }) {
           <img src={e.thumb_url} alt="" className="size-14 shrink-0 rounded-[12px] bg-surface-2 object-cover" loading="lazy" />
           <div className="min-w-0">
             <p className="text-[16px] font-medium leading-snug">
-              {e.observer} says &ldquo;{e.answer}&rdquo;
+              {e.sealed ? (
+                <>
+                  {e.observer} answered <span className="text-muted">· hidden until close</span>
+                </>
+              ) : (
+                <>
+                  {e.observer} says &ldquo;{e.answer}&rdquo;
+                </>
+              )}
             </p>
             <p className="mt-0.5 truncate text-[13px] text-muted">
               <span className="font-mono">{formatDistance(e.distance_m)} away</span> · {e.prompt}
             </p>
           </div>
         </div>
+      );
+    case "peek":
+      return (
+        <>
+          <p className="mt-0.5 text-[16px] font-medium leading-snug">
+            {e.payer_address ? `Agent ${short(e.payer_address)}` : "An agent"} paid {money(e.amount)} {e.currency} for an early look
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
+            <span>
+              at {e.responses_at_peek} {e.responses_at_peek === 1 ? "answer" : "answers"} · tops up the raffle
+            </span>
+            <Tx tx={e.tx} label="x402 paid" />
+          </p>
+          <p className="mt-0.5 truncate text-[13px] text-muted">{q}</p>
+        </>
       );
     case "question_closed":
       return (

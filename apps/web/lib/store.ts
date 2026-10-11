@@ -1,23 +1,33 @@
 import "server-only";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   PLATFORM_FEE,
   type CreateQuestionInput,
+  type AusdFlow,
   type PayoutRail,
   type Evidence,
   type MarketRef,
+  type MarketTrade,
   type QuestionResults,
   type QuestionStatus,
   type QuestionSummary,
+  type RecordMarketTradeInput,
   type WebBaseline,
   type XrplPotInfo,
 } from "@a-eye/shared";
 import { distanceM } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
-import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
+import {
+  peekPaywallActive,
+  peekPriceUnits,
+  prizeUnits,
+  questionPayTo,
+  sendFromTreasury,
+  winnerPayoutUnits,
+} from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
 import {
@@ -132,6 +142,10 @@ type XrplEscrowRow = {
 };
 
 const SCHEMA = `
+create table if not exists meta (
+  key text primary key,
+  value text not null
+);
 create table if not exists observers (
   id text primary key,
   display_name text not null,
@@ -168,6 +182,30 @@ create table if not exists questions (
   webhook_origin text,
   webhook_state text
 );
+create table if not exists market_trades (
+  id text primary key,
+  question_id text not null references questions(id),
+  provider text not null,
+  env text not null,
+  symbol text not null,
+  side text not null,
+  outcome text not null,
+  quantity text not null,
+  price real not null,
+  status text not null,
+  order_id text,
+  filled_quantity text not null,
+  avg_price real,
+  market_pct real,
+  crowd_pct real,
+  edge_pts real,
+  dry_run integer not null,
+  reason text,
+  created_at text not null,
+  updated_at text not null,
+  unique (question_id, order_id)
+);
+create index if not exists market_trades_question_idx on market_trades(question_id, created_at);
 create index if not exists questions_status_idx on questions(status, closes_at);
 create index if not exists questions_geo_idx on questions(lat, lng);
 create table if not exists submissions (
@@ -194,6 +232,16 @@ create table if not exists raffles (
   winner_submission_id text,
   payout_tx text
 );
+create table if not exists peeks (
+  id text primary key,
+  question_id text not null references questions(id),
+  payer_address text,
+  amount real not null,
+  payment_tx text,
+  responses_at_peek integer not null,
+  created_at text not null
+);
+create index if not exists peeks_question_idx on peeks(question_id);
 create table if not exists xrpl_escrows (
   question_id text primary key references questions(id),
   owner text not null,
@@ -234,6 +282,21 @@ create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat,
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
+export function applyPendingRestore(file: string): boolean {
+  if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
+  const previous = `${file}.pre-restore-${Date.now()}`;
+  if (existsSync(file)) {
+    renameSync(file, previous);
+    if (existsSync(`${file}-wal`)) renameSync(`${file}-wal`, `${previous}-wal`);
+  } else {
+    rmSync(`${file}-wal`, { force: true });
+  }
+  rmSync(`${file}-shm`, { force: true });
+  renameSync(`${file}.restore`, file);
+  console.info("[db] restored database from", `${file}.restore`);
+  return true;
+}
+
 /** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
 function migrate(conn: DatabaseSync) {
   const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
@@ -248,10 +311,13 @@ function migrate(conn: DatabaseSync) {
 
 export function db(): DatabaseSync {
   if (!g.__aeyeDb) {
-    const file = process.env.A_EYE_DB_PATH ?? path.join(process.cwd(), ".data", "a-eye.db");
-    if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
+    const file = process.env.A_EYE_DB_PATH ?? path.join(/* turbopackIgnore: true */ process.cwd(), ".data", "a-eye.db");
+    if (file !== ":memory:") {
+      mkdirSync(path.dirname(file), { recursive: true });
+      applyPendingRestore(file);
+    }
     const conn = new DatabaseSync(file);
-    conn.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
+    conn.exec("pragma journal_mode = wal; pragma busy_timeout = 5000; pragma synchronous = normal; pragma foreign_keys = on;");
     conn.exec(SCHEMA);
     migrate(conn);
     const { n } = conn.prepare("select count(*) as n from questions").get() as { n: number };
@@ -259,6 +325,17 @@ export function db(): DatabaseSync {
     g.__aeyeDb = conn;
   }
   return g.__aeyeDb;
+}
+
+export function dbWritable(): boolean {
+  try {
+    const conn = db();
+    conn.exec("create table if not exists _health (id integer primary key check (id = 1), checked_at text not null)");
+    conn.prepare("insert into _health (id, checked_at) values (1, ?) on conflict(id) do update set checked_at = excluded.checked_at").run(new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const shortId = () => randomUUID().replace(/-/g, "").slice(0, 10);
@@ -291,6 +368,38 @@ export function getOrCreateObserver(id: string | undefined): Observer {
     .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
     .run(obs.id, obs.display_name, obs.created_at);
   return obs;
+}
+
+export function getObserver(id: string): Observer | undefined {
+  const row = db().prepare("select * from observers where id = ?").get(id);
+  return row ? toObserver(row as Record<string, unknown>) : undefined;
+}
+
+export function createObserver(): Observer {
+  const obs: Observer = {
+    id: randomUUID(),
+    display_name: `observer-${shortId().slice(0, 4)}`,
+    payout_rail: "evm",
+    created_at: new Date().toISOString(),
+  };
+  db()
+    .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
+    .run(obs.id, obs.display_name, obs.created_at);
+  return obs;
+}
+
+let cachedCookieSecret: string | undefined;
+
+export function cookieSecret(): string {
+  if (process.env.A_EYE_COOKIE_SECRET && process.env.A_EYE_COOKIE_SECRET.length >= 32) {
+    return process.env.A_EYE_COOKIE_SECRET;
+  }
+  if (cachedCookieSecret) return cachedCookieSecret;
+  const generated = randomBytes(32).toString("hex");
+  db().prepare("insert or ignore into meta (key, value) values ('observer_cookie_secret', ?)").run(generated);
+  const row = db().prepare("select value from meta where key = 'observer_cookie_secret'").get() as { value: string };
+  cachedCookieSecret = row.value;
+  return cachedCookieSecret;
 }
 
 export function updateObserver(
@@ -335,7 +444,9 @@ export function observerEntries(observerId: string) {
     captured_at: r.captured_at as string,
     status: r.status as QuestionStatus,
     won,
-    prize: paidXrp ? Number(dropsToXrpString(r.xrpl_drops as string)) : payoutAmount(r.prize_amount as number),
+    prize: paidXrp
+      ? Number(dropsToXrpString(r.xrpl_drops as string))
+      : payoutAmount(potAmount({ id: r.question_id as string, prize_amount: r.prize_amount as number })),
     currency: paidXrp ? "XRP" : (r.currency as string),
     };
   });
@@ -402,6 +513,12 @@ export function setQuestionEnrichment(
 const questionById = (id: string) =>
   db().prepare("select * from questions where id = ?").get(id) as QuestionRow | undefined;
 
+export function getQuestionMarketRef(id: string): MarketRef | null | undefined {
+  const question = questionById(id);
+  if (!question) return undefined;
+  return question.market_ref ? (JSON.parse(question.market_ref) as MarketRef) : null;
+}
+
 const submissionsFor = (questionId: string) =>
   db()
     .prepare("select * from submissions where question_id = ? order by captured_at asc")
@@ -409,6 +526,98 @@ const submissionsFor = (questionId: string) =>
 
 const responseCount = (questionId: string) =>
   (db().prepare("select count(*) as n from submissions where question_id = ?").get(questionId) as { n: number }).n;
+
+type MarketTradeRow = Omit<MarketTrade, "dry_run"> & { dry_run: number };
+
+export function marketTrades(questionId: string): MarketTrade[] {
+  const rows = db()
+    .prepare("select * from market_trades where question_id = ? order by created_at asc")
+    .all(questionId) as MarketTradeRow[];
+  return rows.map((row) => ({ ...row, dry_run: row.dry_run === 1 }));
+}
+
+export function resultsAreSealed(status: QuestionStatus) {
+  return status === "open" && peekPaywallActive();
+}
+
+function sealMarketTrades(trades?: MarketTrade[]) {
+  return trades?.map((trade) => ({ ...trade, crowd_pct: null, edge_pts: null, reason: null }));
+}
+
+export function marketTradesForQuestion(questionId: string, status: QuestionStatus) {
+  const trades = marketTrades(questionId);
+  return resultsAreSealed(status) ? (sealMarketTrades(trades) ?? []) : trades;
+}
+
+export function recordMarketTrade(questionId: string, input: RecordMarketTradeInput): MarketTrade {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db()
+    .prepare(
+      `insert into market_trades (
+        id, question_id, provider, env, symbol, side, outcome, quantity, price, status,
+        order_id, filled_quantity, avg_price, market_pct, crowd_pct, edge_pts, dry_run,
+        reason, created_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(question_id, order_id) do update set
+        provider = excluded.provider, env = excluded.env, symbol = excluded.symbol,
+        side = excluded.side, outcome = excluded.outcome, quantity = excluded.quantity,
+        price = excluded.price, status = excluded.status, filled_quantity = excluded.filled_quantity,
+        avg_price = excluded.avg_price, market_pct = excluded.market_pct,
+        crowd_pct = excluded.crowd_pct, edge_pts = excluded.edge_pts, dry_run = excluded.dry_run,
+        reason = excluded.reason, updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      questionId,
+      input.provider,
+      input.env,
+      input.symbol,
+      input.side,
+      input.outcome,
+      input.quantity,
+      input.price,
+      input.status,
+      input.order_id,
+      input.filled_quantity,
+      input.avg_price,
+      input.market_pct,
+      input.crowd_pct,
+      input.edge_pts,
+      input.dry_run ? 1 : 0,
+      input.reason,
+      now,
+      now,
+    );
+  const row = db()
+    .prepare("select * from market_trades where question_id = ? and order_id is ? order by created_at desc limit 1")
+    .get(questionId, input.order_id) as MarketTradeRow;
+  return { ...row, dry_run: row.dry_run === 1 };
+}
+
+export async function getMarketQuestion(id: string) {
+  await settleDue();
+  const q = questionById(id);
+  if (!q) return undefined;
+  const options = JSON.parse(q.options) as string[];
+  const subs = submissionsFor(id);
+  return {
+    question: summarize(q),
+    options,
+    tally: tally(options, subs.map((s) => s.option_index)),
+    market_trades: marketTradesForQuestion(id, q.status),
+    sealed: resultsAreSealed(q.status),
+  };
+}
+
+export async function latestMarketQuestionIds(limit: number): Promise<string[]> {
+  await settleDue();
+  return (
+    db()
+      .prepare("select id from questions where market_ref is not null order by created_at desc limit ?")
+      .all(limit) as { id: string }[]
+  ).map((row) => row.id);
+}
 
 function summarize(q: QuestionRow, from?: { lat: number; lng: number }): QuestionSummary {
   return {
@@ -460,15 +669,19 @@ export async function allOpenQuestions() {
 
 export async function getResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   await settleDue();
-  return buildResults(id, origin);
+  const results = await buildResults(id, origin);
+  return results ? sealResults(results) : undefined;
 }
 
-async function buildResults(id: string, origin: string): Promise<QuestionResults | undefined> {
+export async function buildResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   const q = questionById(id);
   if (!q) return undefined;
   const options = JSON.parse(q.options) as string[];
   const subs = submissionsFor(id);
   const raffle = db().prepare("select * from raffles where question_id = ?").get(id) as RaffleRow | undefined;
+  const peeks = db()
+    .prepare("select payer_address, amount, payment_tx, created_at from peeks where question_id = ? and payment_tx is not null")
+    .all(id) as { payer_address: string | null; amount: number; payment_tx: string; created_at: string }[];
   const names = new Map(
     (
       db()
@@ -496,12 +709,65 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
   const winner = raffle?.winner_submission_id
     ? evidence.find((e) => e.id === raffle.winner_submission_id)
     : undefined;
+  const pot = potAmount(q);
+  const ausdFlows: AusdFlow[] = [];
+  if (q.payment_tx) {
+    ausdFlows.push({
+      kind: "bounty",
+      amount: Math.round(q.prize_amount * 100) / 100,
+      currency: q.currency,
+      tx: q.payment_tx,
+      url: explorerTxUrl(q.payment_tx),
+      from_label: agentLabel(q.payer_address),
+      to_label: "treasury",
+      at: q.created_at,
+    });
+  }
+  for (const peek of peeks) {
+    ausdFlows.push({
+      kind: "peek",
+      amount: Math.round(peek.amount * 100) / 100,
+      currency: q.currency,
+      tx: peek.payment_tx,
+      url: explorerTxUrl(peek.payment_tx),
+      from_label: agentLabel(peek.payer_address),
+      to_label: "treasury",
+      at: peek.created_at,
+    });
+  }
+  if (raffle?.payout_tx) {
+    ausdFlows.push({
+      kind: "payout",
+      amount: payoutAmount(pot),
+      currency: q.currency,
+      tx: raffle.payout_tx,
+      url: explorerTxUrl(raffle.payout_tx),
+      from_label: "treasury",
+      to_label: winner?.observer ?? "winner",
+      at: q.closed_at ?? q.closes_at,
+    });
+  }
+  if (q.refund_tx) {
+    ausdFlows.push({
+      kind: "refund",
+      amount: Math.round(q.prize_amount * 100) / 100,
+      currency: q.currency,
+      tx: q.refund_tx,
+      url: explorerTxUrl(q.refund_tx),
+      from_label: "treasury",
+      to_label: "agent",
+      at: q.closed_at ?? q.closes_at,
+    });
+  }
+  ausdFlows.sort((a, b) => Date.parse(a.at ?? "") - Date.parse(b.at ?? ""));
   return {
     ...summarize(q),
     tally: tally(options, subs.map((s) => s.option_index)),
     evidence,
     web_baseline: q.web_baseline ? JSON.parse(q.web_baseline) : undefined,
     gallery_url: `${origin}/q/${q.id}`,
+    pot_usd: pot,
+    ausd_flows: ausdFlows,
     raffle: {
       seed_commit: q.seed_commit,
       seed_reveal: raffle?.seed_reveal,
@@ -509,16 +775,55 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
       entropy_block_number: raffle?.entropy_block_number ?? undefined,
       winner_submission_id: raffle?.winner_submission_id ?? undefined,
       winner_observer: winner?.observer,
-      prize_amount: payoutAmount(q.prize_amount),
+      prize_amount: payoutAmount(pot),
       currency: q.currency,
       payout_tx: raffle?.payout_tx ?? undefined,
       payout_url: raffle?.payout_tx ? explorerTxUrl(raffle.payout_tx) : undefined,
       xrpl: xrplPotInfo(id),
     },
+    market_trades: marketTrades(id),
   };
 }
 
+const agentLabel = (address: string | null) =>
+  address ? `agent ${address.slice(0, 6)}…${address.slice(-4)}` as const : "agent" as const;
+
 export const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
+
+export function peekRevenue(questionId: string): number {
+  const row = db()
+    .prepare("select coalesce(sum(amount), 0) as amount from peeks where question_id = ? and payment_tx is not null")
+    .get(questionId) as { amount: number };
+  return Math.round(row.amount * 100) / 100;
+}
+
+export function potAmount(question: Pick<QuestionRow, "id" | "prize_amount">): number {
+  return Math.round((question.prize_amount + peekRevenue(question.id)) * 100) / 100;
+}
+
+export function recordPeek(questionId: string, payer: string, amountUsd: number, tx: string) {
+  const responsesAtPeek = db()
+    .prepare("select count(*) as n from submissions where question_id = ?")
+    .get(questionId) as { n: number };
+  db()
+    .prepare(
+      "insert into peeks (id, question_id, payer_address, amount, payment_tx, responses_at_peek, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run(randomUUID(), questionId, payer, Math.round(amountUsd * 100) / 100, tx, responsesAtPeek.n, new Date().toISOString());
+}
+
+export function sealResults(results: QuestionResults): QuestionResults {
+  if (!resultsAreSealed(results.status)) return results;
+  const origin = new URL(results.gallery_url).origin;
+  return {
+    ...results,
+    tally: results.tally.map((row) => ({ ...row, count: 0, pct: 0 })),
+    evidence: [],
+    market_trades: sealMarketTrades(results.market_trades),
+    sealed: true,
+    peek: { price_usd: Number(peekPriceUnits()) / 10 ** 6, url: `${origin}/api/questions/${results.id}/peek` },
+  };
+}
 
 // ---------- observer stats & leaderboard ----------
 
@@ -557,7 +862,7 @@ function loadAnswerRows(): AnswerRow[] {
 function loadWinRows(): WinRow[] {
   const rows = db()
     .prepare(
-      `select r.winner_submission_id as submission_id, s.observer_id, s.captured_at, q.prize_amount,
+      `select r.winner_submission_id as submission_id, r.question_id, s.observer_id, s.captured_at, q.prize_amount,
               x.payout_tx as xrpl_payout_tx
          from raffles r
          join submissions s on s.id = r.winner_submission_id
@@ -571,7 +876,9 @@ function loadWinRows(): WinRow[] {
     observer_id: r.observer_id as string,
     captured_at: r.captured_at as string,
     // Wins paid in XRP from an escrowed pot still count as wins, but not as AUSD earned.
-    prize: r.xrpl_payout_tx ? 0 : payoutAmount(r.prize_amount as number),
+    prize: r.xrpl_payout_tx
+      ? 0
+      : payoutAmount(potAmount({ id: r.question_id as string, prize_amount: r.prize_amount as number })),
   }));
 }
 
@@ -870,7 +1177,12 @@ async function payWinner(questionId: string, winnerSubmissionId: string, prizeUs
     console.warn(`[payments] winner of ${questionId} has no payout address; payout pending`);
     return;
   }
-  const tx = await sendFromTreasury("payout", winner.evm_address, winnerPayoutUnits(prizeUsd));
+  const q = questionById(questionId);
+  const tx = await sendFromTreasury(
+    "payout",
+    winner.evm_address,
+    winnerPayoutUnits(q ? potAmount(q) : prizeUsd),
+  );
   if (tx) db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
 }
 
@@ -1311,7 +1623,7 @@ function seed(conn: DatabaseSync) {
 
 export async function questionsByAgent(agentLabel: string, origin: string) {
   const rows = db()
-    .prepare("select id from questions where agent_label = ? order by created_at desc limit 50")
+    .prepare("select id from questions where agent_label = ? collate nocase order by created_at desc limit 50")
     .all(agentLabel) as { id: string }[];
   const results = await Promise.all(rows.map((r) => getResults(r.id, origin)));
   return results.filter((r): r is QuestionResults => Boolean(r));

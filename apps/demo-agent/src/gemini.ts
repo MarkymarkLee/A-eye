@@ -2,7 +2,11 @@
 // production (production is read-only discovery); orders only ever go to
 // env "sandbox" — hard-coded, never production.
 
-import { createClient, HmacAuth } from "@gemini-markets/sdk/server";
+import { createClient } from "@gemini-markets/sdk/server";
+import { GeminiRestClient, type GeminiOrder, type OrderSpec } from "./gemini-rest.js";
+
+export { parseGeminiJson } from "./gemini-rest.js";
+export type { OrderSpec } from "./gemini-rest.js";
 
 export type Env = "sandbox" | "production";
 export const ORDER_ENV: Env = "sandbox";
@@ -67,14 +71,16 @@ const STRIKE_TYPES = new Set(["above", "below"]);
 
 export function observableCandidates(
   events: MarketEvent[],
-  opts: { env: Env; now?: Date },
+  opts: { env: Env; now?: Date; minExpiryMinutes?: number },
 ): Candidate[] {
   const env = opts.env;
+  const expiryCutoff = (opts.now?.getTime() ?? Date.now()) + (opts.minExpiryMinutes ?? 0) * 60_000;
   const out: Candidate[] = [];
   for (const ev of events) {
     for (const c of ev.contracts ?? []) {
       if (!c.strike?.type || !STRIKE_TYPES.has(c.strike.type) || c.strike.value == null) continue;
       if (!c.instrumentSymbol) continue;
+      if (ev.expiryDate && Date.parse(ev.expiryDate) < expiryCutoff) continue;
       out.push({
         env,
         tradable: env === "sandbox",
@@ -93,6 +99,9 @@ export function observableCandidates(
   const expiryOf = (c: Candidate) => (c.expiry ? Date.parse(c.expiry) : Number.POSITIVE_INFINITY);
   out.sort((a, b) => {
     if (a.tradable !== b.tradable) return a.tradable ? -1 : 1;
+    const at = a.buy_yes != null && a.buy_no != null;
+    const bt = b.buy_yes != null && b.buy_no != null;
+    if (at !== bt) return at ? -1 : 1;
     const ap = a.implied_yes != null;
     const bp = b.implied_yes != null;
     if (ap !== bp) return ap ? -1 : 1;
@@ -114,8 +123,10 @@ export type ListingReport = {
  * plus sandbox events matching the search in ANY category (sandbox has no
  * Weather right now).
  */
-export async function listObservableMarkets(): Promise<ListingReport> {
+export async function listObservableMarkets(opts: { questionMinutes?: number; now?: Date } = {}): Promise<ListingReport> {
   const search = process.env.GEMINI_MARKET_SEARCH ?? "San Francisco";
+  const now = opts.now ?? new Date();
+  const minExpiryMinutes = (opts.questionMinutes ?? 10) + 5;
   const candidates: Candidate[] = [];
   const perEnv: ListingReport["perEnv"] = [];
   for (const env of ["sandbox", "production"] as Env[]) {
@@ -124,21 +135,23 @@ export async function listObservableMarkets(): Promise<ListingReport> {
       const weather = await client.predictions.listEvents({
         status: ["active"],
         category: ["Weather"],
-        search,
+        ...(env === "production" ? { search } : {}),
         limit: 100,
       });
       let events = (weather.data ?? []) as MarketEvent[];
       if (env === "sandbox") {
         const anyCat = await client.predictions.listEvents({
           status: ["active"],
-          search,
           limit: 100,
         });
-        const seen = new Set(events.map((e) => e.ticker));
-        events = events.concat(((anyCat.data ?? []) as MarketEvent[]).filter((e) => !seen.has(e.ticker)));
+        const merged = new Map<string, MarketEvent>();
+        for (const event of [...events, ...((anyCat.data ?? []) as MarketEvent[])]) {
+          merged.set(event.ticker ?? JSON.stringify(event), event);
+        }
+        events = [...merged.values()];
       }
       perEnv.push({ env, events: events.length });
-      candidates.push(...observableCandidates(events, { env, now: new Date() }));
+      candidates.push(...observableCandidates(events, { env, now, minExpiryMinutes }));
     } catch (err) {
       perEnv.push({ env, events: 0, error: err instanceof Error ? err.message : String(err) });
     }
@@ -146,6 +159,9 @@ export async function listObservableMarkets(): Promise<ListingReport> {
   // Re-sort the merged list.
   candidates.sort((a, b) => {
     if (a.tradable !== b.tradable) return a.tradable ? -1 : 1;
+    const at = a.buy_yes != null && a.buy_no != null;
+    const bt = b.buy_yes != null && b.buy_no != null;
+    if (at !== bt) return at ? -1 : 1;
     const ap = a.implied_yes != null;
     const bp = b.implied_yes != null;
     if (ap !== bp) return ap ? -1 : 1;
@@ -201,76 +217,214 @@ export function decideTrade(input: {
   };
 }
 
-export type OrderSpec = {
-  symbol: string;
-  orderType: "limit";
-  side: "buy";
-  outcome: "yes" | "no";
-  quantity: string;
-  price: string;
-  makerOrCancel: false;
+export type SizeTradeInput = {
+  crowdYesPct: number;
+  responses: number;
+  impliedYes: number | null;
+  buyYes?: number | null;
+  buyNo?: number | null;
+  thresholdPts?: number;
+  minResponses?: number;
+  priorWeight?: number;
+  minEdge?: number;
+  bankrollUsd?: number;
+  kellyFraction?: number;
+  maxContracts?: number;
+  maxNotionalUsd?: number;
+  fixedQty?: number | string;
 };
+
+export type SizedTrade = {
+  action: "buy_yes" | "buy_no" | "none";
+  divergence_pts: number;
+  fair_yes: number | null;
+  edge: number | null;
+  limit_price?: string;
+  quantity?: string;
+  notional?: number;
+  kelly?: number;
+  reason: string;
+};
+
+const envNumber = (name: string, fallback: number) => Number(process.env[name] ?? fallback);
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+export function sizeTrade(input: SizeTradeInput): SizedTrade {
+  const decision = decideTrade({
+    crowdYesPct: input.crowdYesPct,
+    responses: input.responses,
+    impliedYes: input.impliedYes,
+    thresholdPts: input.thresholdPts,
+    minResponses: input.minResponses,
+  });
+  if (decision.action === "none" || input.impliedYes == null) {
+    return { action: "none", divergence_pts: decision.divergence_pts, fair_yes: null, edge: null, reason: decision.reason };
+  }
+  const priorWeight = input.priorWeight ?? envNumber("ORACLE_PRIOR_WEIGHT", 5);
+  const weight = input.responses / (input.responses + priorWeight);
+  const fairYes = weight * (input.crowdYesPct / 100) + (1 - weight) * input.impliedYes;
+  const buyYes = input.buyYes ?? input.impliedYes;
+  const buyNo = input.buyNo ?? 1 - input.impliedYes;
+  const ask = decision.action === "buy_yes" ? buyYes : buyNo;
+  const fair = decision.action === "buy_yes" ? fairYes : 1 - fairYes;
+  const edge = Number((fair - ask).toFixed(12));
+  const minEdge = input.minEdge ?? envNumber("ORACLE_MIN_EDGE", 0.03);
+  if (edge < minEdge) {
+    return {
+      action: "none",
+      divergence_pts: decision.divergence_pts,
+      fair_yes: fairYes,
+      edge,
+      reason: `edge ${edge.toFixed(4)} < min edge ${minEdge.toFixed(4)}`,
+    };
+  }
+  const limit = clamp(Math.round(ask * 100) / 100, 0.01, 0.99);
+  const bankroll = input.bankrollUsd ?? envNumber("ORACLE_BANKROLL_USD", 20);
+  const kellyFraction = input.kellyFraction ?? envNumber("ORACLE_KELLY_FRACTION", 0.25);
+  const requestedMaxContracts = input.maxContracts ?? envNumber("ORACLE_MAX_CONTRACTS", 10);
+  const requestedMaxNotional = input.maxNotionalUsd ?? envNumber("ORACLE_MAX_NOTIONAL_USD", 5);
+  const maxContracts = clamp(Math.floor(requestedMaxContracts), 1, 50);
+  const maxNotional = clamp(requestedMaxNotional, 0, 25);
+  const kelly = Math.max(0, (fair - limit) / (1 - limit));
+  const stake = bankroll * kellyFraction * kelly;
+  const calculatedQty = Math.floor(Math.min(stake, maxNotional) / limit);
+  const fixedQty = input.fixedQty ?? process.env.GEMINI_ORDER_QTY;
+  const initialQty = fixedQty == null ? calculatedQty : Number(fixedQty);
+  const quantity = Math.max(1, Math.min(Math.floor(initialQty), maxContracts, Math.floor(maxNotional / limit)));
+  return {
+    action: decision.action,
+    divergence_pts: decision.divergence_pts,
+    fair_yes: fairYes,
+    edge,
+    limit_price: limit.toFixed(2),
+    quantity: String(quantity),
+    notional: Math.round(quantity * limit * 100) / 100,
+    kelly,
+    reason: decision.reason,
+  };
+}
 
 export function buildOrder(
   candidate: Candidate,
-  action: "buy_yes" | "buy_no",
-  qty = process.env.GEMINI_ORDER_QTY ?? "1",
+  sizing: SizedTrade,
 ): OrderSpec {
-  let price: number | null;
-  if (action === "buy_yes") price = candidate.buy_yes ?? candidate.implied_yes;
-  else price = candidate.buy_no ?? (candidate.implied_yes != null ? 1 - candidate.implied_yes : null);
-  let p = price ?? 0.5;
-  p = Math.round(p * 100) / 100;
-  p = Math.min(0.99, Math.max(0.01, p));
+  if (sizing.action === "none" || sizing.quantity == null || sizing.limit_price == null) {
+    throw new Error("Cannot build an order from a no-trade sizing result.");
+  }
   return {
     symbol: candidate.contract_symbol,
     orderType: "limit",
     side: "buy",
-    outcome: action === "buy_yes" ? "yes" : "no",
-    quantity: qty,
-    price: p.toFixed(2),
+    outcome: sizing.action === "buy_yes" ? "yes" : "no",
+    quantity: sizing.quantity,
+    price: sizing.limit_price,
+    timeInForce: "good-til-cancel",
     makerOrCancel: false,
   };
 }
 
-export type OrderResult =
-  | { dry_run: true; reason: string; order: OrderSpec }
-  | { dry_run: false; order_id?: string; order: OrderSpec; raw: unknown };
+export type SandboxTradeResult = {
+  dry_run: boolean;
+  reason?: string;
+  order_id?: string;
+  hash_order_id?: string;
+  status?: "filled" | "partially_filled" | "cancelled" | "open" | "rejected";
+  filled_quantity?: string;
+  avg_price?: string | null;
+  cancelled_remainder?: boolean;
+  position?: unknown | null;
+  order?: GeminiOrder | OrderSpec;
+};
 
-export async function placeSandboxOrder(
-  order: OrderSpec,
+export async function executeSandboxTrade(
+  spec: OrderSpec,
   candidate: Candidate,
-  opts: { dryRun?: boolean } = {},
-): Promise<OrderResult> {
+  opts: { dryRun?: boolean; fillWaitS?: number; client?: GeminiRestClient; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<SandboxTradeResult> {
   const missing: string[] = [];
   if (!process.env.GEMINI_API_KEY) missing.push("GEMINI_API_KEY");
   if (!process.env.GEMINI_API_SECRET) missing.push("GEMINI_API_SECRET");
   if (!candidate.tradable) {
-    return {
-      dry_run: true,
-      reason: "instrument only listed on production; sandbox has no Weather markets",
-      order,
-    };
+    return { dry_run: true, reason: "instrument is not tradable in the Gemini sandbox", order: spec };
   }
   if (missing.length > 0) {
-    return { dry_run: true, reason: `missing ${missing.join(" and ")}`, order };
+    return { dry_run: true, reason: `missing ${missing.join(" and ")}`, order: spec };
   }
   if (opts.dryRun) {
-    return { dry_run: true, reason: "--dry-run flag", order };
+    return { dry_run: true, reason: "--dry-run flag", order: spec };
   }
-  const client = await createClient({
-    env: "sandbox",
-    auth: new HmacAuth({
-      apiKey: process.env.GEMINI_API_KEY!,
-      apiSecret: process.env.GEMINI_API_SECRET!,
-    }),
-    skipWsInit: true,
-  });
-  const terms = await client.predictions.getPredictionMarketsTermsStatus();
-  if (terms.hasAcceptedLatest === false) {
-    await client.predictions.acceptPredictionMarketsTerms();
+  const client = opts.client ?? new GeminiRestClient();
+  const pause = opts.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const fillWaitS = opts.fillWaitS ?? envNumber("ORACLE_FILL_WAIT_S", 10);
+  const placed = await client.placeOrder(spec);
+  const orderId = idOf(placed);
+  let latest = placed;
+  let active = orderStatus(placed) === "open";
+  const deadline = Date.now() + Math.max(0, fillWaitS) * 1000;
+  while (active && Date.now() < deadline) {
+    await pause(Math.min(2000, Math.max(0, deadline - Date.now())));
+    const orders = await client.activeOrders(spec.symbol);
+    const current = orders.find((order) => idOf(order) === orderId);
+    if (current) latest = current;
+    else {
+      const history = await client.orderHistory(spec.symbol);
+      const historic = history.find((order) => idOf(order) === orderId);
+      if (historic) latest = historic;
+    }
+    active = orderStatus(latest) === "open";
   }
-  const resp = await client.predictions.placeOrder(order);
-  const raw = resp as unknown as Record<string, unknown>;
-  return { dry_run: false, order_id: (raw.orderId ?? raw.id) as string | undefined, order, raw };
+  let cancelledRemainder = false;
+  if (active && Number(latest.remainingQuantity ?? spec.quantity) > 0 && orderId) {
+    await client.cancelOrder(orderId);
+    cancelledRemainder = true;
+  }
+  const history = await client.orderHistory(spec.symbol);
+  latest = history.find((order) => idOf(order) === orderId) ?? latest;
+  const positions = await client.positions();
+  const position = findPosition(positions, spec.symbol);
+  const filled = String(latest.filledQuantity ?? "0");
+  const status = normalizeStatus(latest, cancelledRemainder);
+  return {
+    dry_run: false,
+    order_id: orderId,
+    hash_order_id: stringValue(latest.hashOrderId),
+    status,
+    filled_quantity: filled,
+    avg_price: stringValue(latest.avgExecutionPrice ?? latest.avgPrice),
+    cancelled_remainder: cancelledRemainder,
+    position,
+    order: latest,
+  };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return value == null ? undefined : String(value);
+}
+
+function idOf(order: GeminiOrder): string | undefined {
+  return stringValue(order.orderId ?? order.id);
+}
+
+function orderStatus(order: GeminiOrder): string {
+  return String(order.status ?? "").toLowerCase();
+}
+
+function normalizeStatus(order: GeminiOrder, cancelled: boolean): NonNullable<SandboxTradeResult["status"]> {
+  const filled = Number(order.filledQuantity ?? 0);
+  const remaining = Number(order.remainingQuantity ?? 0);
+  const status = orderStatus(order);
+  if (status === "rejected") return "rejected";
+  if (cancelled) return filled > 0 ? "partially_filled" : "cancelled";
+  if ((status === "filled" || remaining === 0) && filled > 0) return "filled";
+  if (filled > 0 && remaining > 0) return "partially_filled";
+  return "open";
+}
+
+function findPosition(positions: unknown, symbol: string): unknown | null {
+  const rows = Array.isArray(positions)
+    ? positions
+    : positions && typeof positions === "object" && Array.isArray((positions as Record<string, unknown>).positions)
+      ? (positions as { positions: unknown[] }).positions
+      : [];
+  return rows.find((row) => row && typeof row === "object" && (row as Record<string, unknown>).symbol === symbol) ?? null;
 }

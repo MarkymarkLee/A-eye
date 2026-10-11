@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { CreateQuestionInput, askQuestionShape, type QuestionResults } from "@a-eye/shared";
 import { z } from "zod";
-import type { AEyeApi } from "./api.js";
+import { ApiError, type AEyeApi } from "./api.js";
 
 const json = (value: unknown): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
@@ -18,24 +18,29 @@ async function resultsContent(
   results: QuestionResults,
   includeImages: boolean,
   maxImages: number,
+  prelude?: string,
 ): Promise<CallToolResult> {
-  const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(results, null, 2) }];
+  const content: CallToolResult["content"] = [
+    ...(prelude ? [{ type: "text" as const, text: prelude }] : []),
+    { type: "text", text: JSON.stringify(results, null, 2) },
+  ];
   if (!includeImages) return { content };
   const limit = Number.isFinite(maxImages) ? Math.max(0, Math.floor(maxImages)) : 8;
   const evidence = results.evidence.slice(0, limit);
   const images = await Promise.all(evidence.map((ev) => api.fetchImage(ev.image_url).catch(() => null)));
   for (const [i, ev] of evidence.entries()) {
     const img = images[i];
-    if (!img) continue;
     const rep = ev.observer_reputation;
     const repText =
       rep.agreement_rate === null
         ? ", new observer (no closed questions yet)"
         : `, observer agreed with the crowd ${Math.round(rep.agreement_rate * 100)}% of the time on ${rep.scored_answers} closed questions (${rep.answer_count} answers)`;
+    const text = `Evidence #${i + 1}: "${ev.answer}"${ev.free_text ? ` (${ev.free_text})` : ""}, ${ev.distance_m} m away, captured ${ev.captured_at}${repText}`;
     content.push({
       type: "text",
-      text: `Evidence #${i + 1}: "${ev.answer}"${ev.free_text ? ` (${ev.free_text})` : ""}, ${ev.distance_m} m away, captured ${ev.captured_at}${repText}`,
+      text: img ? text : `${text} (photo unavailable; see ${results.gallery_url})`,
     });
+    if (!img) continue;
     content.push({ type: "image", data: img.data, mimeType: img.mimeType });
   }
   if (results.evidence.length > limit) {
@@ -43,6 +48,11 @@ async function resultsContent(
   }
   return { content };
 }
+
+const sealedResultsNote = (results: QuestionResults) =>
+  results.sealed
+    ? `Results are sealed until the question closes (${results.responses} responses so far). Call peek_results to buy interim results for $${results.peek?.price_usd ?? 0} AUSD, or wait_for_results.`
+    : undefined;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -76,13 +86,53 @@ export function createServer(
       description:
         "Percent per answer, response count, gallery link, raffle info and (optionally) evidence photos downscaled to about 512 px, capped at 8 images by default. Each evidence item carries observer_reputation — how often that observer agreed with the crowd on past closed questions, plus their answer count — so you can weight answers.",
       inputSchema: {
+        question_id: z.string().trim().min(1),
+        include_images: z.boolean().default(true),
+      },
+    },
+    async ({ question_id, include_images }) => {
+      try {
+        const results = await api.getResults(question_id);
+        return await resultsContent(api, results, include_images, maxImages, sealedResultsNote(results));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "peek_results",
+    {
+      title: "Peek at interim results",
+      description:
+        "Pay a few cents of AUSD (x402, Base Sepolia) to see interim results of an OPEN question before it closes — tally and evidence are sealed until close otherwise. Peek fees top up the observers' raffle pot. Free once the question has closed.",
+      inputSchema: {
         question_id: z.string(),
         include_images: z.boolean().default(true),
       },
     },
     async ({ question_id, include_images }) => {
       try {
-        return await resultsContent(api, await api.getResults(question_id), include_images, maxImages);
+        const results = await api.peekResults(question_id);
+        const payment = `paid: ${results.paid ? "yes" : "no"}; payment_tx: ${results.payment_tx ?? "none"}`;
+        return await resultsContent(api, results, include_images, maxImages, payment);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "compare_market",
+    {
+      title: "Compare market odds with humans",
+      description:
+        "Live Gemini prediction-market odds for the question's market_ref vs the crowd's YES %, edge in points, and recorded sandbox trades.",
+      inputSchema: { question_id: z.string() },
+    },
+    async ({ question_id }) => {
+      try {
+        return json(await api.marketComparison(question_id));
       } catch (err) {
         return fail(err);
       }
@@ -94,10 +144,10 @@ export function createServer(
     {
       title: "Wait for results",
       description:
-        "Block until the question closes or the timeout passes, then return the results. Each evidence item carries observer_reputation — how often that observer agreed with the crowd on past closed questions, plus their answer count — so you can weight answers.",
+        "Block until the question closes or the timeout passes (timeout_s: 0–1800; 0 fetches once), then return the results. Each evidence item carries observer_reputation — how often that observer agreed with the crowd on past closed questions, plus their answer count — so you can weight answers.",
       inputSchema: {
-        question_id: z.string(),
-        timeout_s: z.number().int().min(1).max(1800).default(300),
+        question_id: z.string().trim().min(1),
+        timeout_s: z.number().int().min(0).max(1800).default(300),
         include_images: z.boolean().default(true),
       },
     },
@@ -105,11 +155,26 @@ export function createServer(
       try {
         const deadline = Date.now() + timeout_s * 1000;
         let results = await api.getResults(question_id);
+        let lastPollError: ApiError | undefined;
         while (results.status === "open" && Date.now() < deadline) {
           await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
-          results = await api.getResults(question_id);
+          if (Date.now() >= deadline) break;
+          try {
+            results = await api.getResults(question_id);
+            lastPollError = undefined;
+          } catch (err) {
+            if (!(err instanceof ApiError) || (err.status !== 0 && err.status < 500)) throw err;
+            lastPollError = err;
+          }
         }
-        return await resultsContent(api, results, include_images, maxImages);
+        const result = await resultsContent(api, results, include_images, maxImages, sealedResultsNote(results));
+        if (lastPollError) {
+          result.content.push({
+            type: "text",
+            text: `Note: lost contact with the A-eye API while waiting (${lastPollError.message}); these are the last results received.`,
+          });
+        }
+        return result;
       } catch (err) {
         return fail(err);
       }
