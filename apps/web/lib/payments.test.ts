@@ -35,7 +35,7 @@ describe("payments", () => {
     expect(prizeUnits(0.01)).toBe(BigInt(10_000));
     expect(prizeUnits(2.5)).toBe(BigInt(2_500_000));
     expect(winnerPayoutUnits(2.5)).toBe(BigInt(2_250_000));
-    expect(winnerPayoutUnits(2.52)).toBe(BigInt(2_270_000));
+    expect(winnerPayoutUnits(2.52)).toBe(BigInt(2_268_000));
   });
 
   it("enables x402 only when a treasury address or key is configured", () => {

@@ -32,6 +32,7 @@ afterAll(() => {
   rmSync(uploadDir, { recursive: true, force: true });
 });
 
+const { FacilitatorNotSubmittedError } = await import("./chain");
 const store = await import("./store");
 const { activity } = await import("./activity");
 const { raffleSnippet } = await import("./raffle-snippet");
@@ -80,7 +81,7 @@ describe("activity feed", () => {
   beforeEach(() => {
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "1");
     transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
-    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
+    transferAusdViaFacilitator.mockReset().mockRejectedValue(new FacilitatorNotSubmittedError("facilitator unavailable"));
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -158,7 +159,7 @@ describe("activity feed", () => {
       amount: 2.25,
       to_label: paidObserver.display_name,
     });
-    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(`0x${"22".repeat(20)}`, BigInt(2_250_000));
+    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(`0x${"22".repeat(20)}`, BigInt(2_250_000), expect.anything());
 
     expect(paidFeed.counters.questions).toBe(before.counters.questions + 2);
     expect(paidFeed.counters.verified_photos).toBe(before.counters.verified_photos + 4);

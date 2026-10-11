@@ -44,7 +44,7 @@ export function checkPresence(input: {
       reason: `You're ${formatDistance(distance)} away. This question needs you within ${formatDistance(input.question.radius_m)}.`,
     };
   }
-  const skew = Math.abs(now - Date.parse(input.captured_at));
+  const skew = now - Date.parse(input.captured_at);
   if (!Number.isFinite(skew) || skew > GEO_RULES.maxClockSkewMs) {
     return {
       ok: false,
@@ -52,7 +52,28 @@ export function checkPresence(input: {
       reason: "That photo is too old. Take a fresh one and submit within 2 minutes.",
     };
   }
+  if (skew < -GEO_RULES.maxClockSkewMs) {
+    return {
+      ok: false,
+      distance_m: distance,
+      reason: "Your phone's clock is ahead of the server's. Fix the clock and take a new photo.",
+    };
+  }
   return { ok: true, distance_m: distance };
+}
+
+/**
+ * SQL prefilter for a longitude window centered on `lng`, wrapping across the
+ * antimeridian (±180) and degrading to "no filter" when the window spans the
+ * whole range (e.g. near the poles). Column name is `lng`.
+ */
+export function lngBoxSql(lng: number, dLng: number): { sql: string; params: number[] } {
+  if (!Number.isFinite(dLng) || dLng >= 180) return { sql: "1 = 1", params: [] };
+  const lo = lng - dLng;
+  const hi = lng + dLng;
+  if (lo < -180) return { sql: "(lng >= ? or lng <= ?)", params: [lo + 360, hi] };
+  if (hi > 180) return { sql: "(lng >= ? or lng <= ?)", params: [lo, hi - 360] };
+  return { sql: "lng between ? and ?", params: [lo, hi] };
 }
 
 export function formatDistance(m: number) {
