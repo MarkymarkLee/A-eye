@@ -26,10 +26,14 @@ export const CreateQuestionInput = z.object({
   lng: z.number().min(-180).max(180),
   radius_m: z.number().int().min(25).max(2000).default(150),
   question: z.string().trim().min(4).max(240),
-  options: z.array(z.string().trim().min(1).max(60)).min(2).max(6),
+  options: z
+    .array(z.string().trim().min(1).max(60))
+    .min(2)
+    .max(6)
+    .refine((opts) => new Set(opts.map((o) => o.trim().toLowerCase())).size === opts.length, "options must be distinct"),
   allow_free_text: z.boolean().default(false),
   place_label: z.string().trim().max(80).optional(),
-  prize_usd: z.number().positive().max(500).default(1),
+  prize_usd: z.number().min(0.01).max(500).default(1),
   min_responses: z.number().int().min(1).max(100).default(3),
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),

@@ -9,11 +9,33 @@ import { withX402Payment } from "@/lib/x402";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const hasLat = url.searchParams.has("lat");
+  const hasLng = url.searchParams.has("lng");
+  const hasMaxKm = url.searchParams.has("max_km");
+  const latValue = url.searchParams.get("lat");
+  const lngValue = url.searchParams.get("lng");
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
-  const maxKm = Number(url.searchParams.get("max_km") ?? 5);
-  if (url.searchParams.has("lat") && Number.isFinite(lat) && Number.isFinite(lng)) {
-    return NextResponse.json({ questions: await nearbyQuestions(lat, lng, maxKm) });
+  const requestedMaxKm = Number(url.searchParams.get("max_km"));
+  if (
+    hasLat &&
+    (!hasLng ||
+      !latValue?.trim() ||
+      !lngValue?.trim() ||
+      !Number.isFinite(lat) ||
+      lat < -90 ||
+      lat > 90 ||
+      !Number.isFinite(lng) ||
+      lng < -180 ||
+      lng > 180)
+  ) {
+    return NextResponse.json({ error: "lat and lng must both be valid coordinates" }, { status: 400 });
+  }
+  if (hasMaxKm && (!Number.isFinite(requestedMaxKm) || requestedMaxKm <= 0)) {
+    return NextResponse.json({ error: "max_km must be a positive number" }, { status: 400 });
+  }
+  if (hasLat) {
+    return NextResponse.json({ questions: await nearbyQuestions(lat, lng, Math.min(hasMaxKm ? requestedMaxKm : 5, 50)) });
   }
   return NextResponse.json({ questions: await allOpenQuestions() });
 }
@@ -48,7 +70,14 @@ export async function POST(req: Request) {
   if (!unpaidAllowed) {
     const payTo = questionPayTo();
     if (!payTo) {
-      return NextResponse.json({ error: "Payment required", message: "x402 payments are not configured" }, { status: 402 });
+      return NextResponse.json(
+        { error: "Payments are not configured", message: "x402 payments are not configured on this server" },
+        { status: 503 },
+      );
+    }
+    const parsed = CreateQuestionInput.safeParse(await req.clone().json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid question", issues: parsed.error.issues }, { status: 400 });
     }
     return createPaidQuestion(payTo)(req);
   }

@@ -43,14 +43,14 @@ The activity feed settles questions whose deadline has passed when polled. Quest
 
 ## MCP
 
-Build and inspect the stdio server:
+Install dependencies and build the stdio server:
 
 ```bash
-npm run build -w @a-eye/mcp
-npx @modelcontextprotocol/inspector node packages/mcp/dist/index.js
+npx -y npm@11 install && npm run build -w @a-eye/mcp
+npx @modelcontextprotocol/inspector -e A_EYE_API_URL=http://localhost:3000 node packages/mcp/dist/index.js
 ```
 
-Claude Desktop / Claude Code config:
+For configuration, `args` must be the absolute path to `packages/mcp/dist/index.js`. The same `mcpServers` JSON works for Claude Desktop (`claude_desktop_config.json`), Claude Code (`.mcp.json` in the project), and Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`):
 
 ```json
 {
@@ -65,6 +65,8 @@ Claude Desktop / Claude Code config:
 ```
 
 Tools include `ask_location_question`, `get_question_results` (with photos as image blocks), `peek_results` (paid interim results), `wait_for_results`, `check_coverage`, and `list_my_questions`. Each evidence item carries `observer_reputation` — the observer's agreement rate with the crowd on past closed questions plus their answer count — so agents can weight answers.
+
+Option strings must be distinct, and `prize_usd` must be from 0.01 to 500. Without a wallet, questions are stored under `A_EYE_AGENT_LABEL` (default `mcp-agent`); on an unpaid server, set a unique label or `list_my_questions` shows every unpaid MCP agent's questions. Paying agents are identified by their wallet address. `A_EYE_MCP_MAX_IMAGES` caps attached evidence images (default 8), and `wait_for_results` accepts `timeout_s` from 0 to 1800 seconds.
 
 ### Payments: x402 and AUSD on Base Sepolia
 
