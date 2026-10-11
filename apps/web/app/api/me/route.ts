@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { PayoutRail } from "@a-eye/shared";
+import { isSafeText, PayoutRail } from "@a-eye/shared";
 import { currentObserver } from "@/lib/observer";
 import { maybeIssueObserverCredential, observerCredential, observerEntries, observerStats, updateObserver } from "@/lib/store";
 import { isClassicAddress } from "@/lib/xrpl";
+import { isCrossSiteRequest } from "@/lib/same-origin";
+import { readBodyText } from "@/lib/body";
 
 const Patch = z
   .object({
-    display_name: z.string().trim().min(2).max(40).optional(),
+    display_name: z.string().trim().min(2).max(40).refine(isSafeText, "Must not contain control or bidi-override characters.").optional(),
     evm_address: z
       .string()
       .trim()
@@ -34,8 +36,19 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (isCrossSiteRequest(req)) {
+    return NextResponse.json({ error: "Cross-site request blocked." }, { status: 403 });
+  }
+  const text = await readBodyText(req, 4 * 1024);
+  if (text === null) return NextResponse.json({ error: "Request body too large." }, { status: 413 });
   const obs = await currentObserver();
-  const parsed = Patch.safeParse(await req.json().catch(() => null));
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  const parsed = Patch.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid profile" }, { status: 400 });
   }

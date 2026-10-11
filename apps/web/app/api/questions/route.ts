@@ -6,12 +6,17 @@ import { allOpenQuestions, createQuestion, escrowQuestionPot, getResults, nearby
 import { originOf } from "@/lib/origin";
 import { paymentsEnabled, prizeUnits, questionPayTo, sendFromTreasury } from "@/lib/payments";
 import { withX402Payment } from "@/lib/x402";
+import { readBodyText } from "@/lib/body";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
-  const maxKm = Number(url.searchParams.get("max_km") ?? 5);
+  const requestedMaxKm = Number(url.searchParams.get("max_km") ?? 5);
+  const maxKm = Number.isFinite(requestedMaxKm) && requestedMaxKm >= 0
+    ? Math.min(50, Math.max(0.1, requestedMaxKm))
+    : 5;
   if (url.searchParams.has("lat") && Number.isFinite(lat) && Number.isFinite(lng)) {
     return NextResponse.json({ questions: await nearbyQuestions(lat, lng, maxKm) });
   }
@@ -42,6 +47,13 @@ const createPaidQuestion = (payTo: string) =>
   );
 
 export async function POST(req: Request) {
+  const text = await readBodyText(req, 32 * 1024);
+  if (text === null) return NextResponse.json({ error: "Request body too large." }, { status: 413 });
+  const rebuilt = new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: text || undefined,
+  });
   // Dev bypass: ALLOW_UNPAID_QUESTIONS=1 skips x402 (also the default outside production when no treasury is set).
   const unpaidAllowed =
     process.env.ALLOW_UNPAID_QUESTIONS === "1" || (process.env.NODE_ENV !== "production" && !paymentsEnabled());
@@ -50,14 +62,22 @@ export async function POST(req: Request) {
     if (!payTo) {
       return NextResponse.json({ error: "Payment required", message: "x402 payments are not configured" }, { status: 402 });
     }
-    return createPaidQuestion(payTo)(req);
+    return createPaidQuestion(payTo)(rebuilt);
   }
-  const parsed = CreateQuestionInput.safeParse(await req.json().catch(() => null));
+  const limit = rateLimit(`questions:${clientIp(rebuilt)}`, 20, 10 * 60_000);
+  if (!limit.ok) return tooManyRequests(limit.retryAfterS);
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  const parsed = CreateQuestionInput.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid question", issues: parsed.error.issues }, { status: 400 });
   }
-  const id = createQuestion(parsed.data, req.headers.get("x-a-eye-agent")?.slice(0, 64) || undefined, undefined, originOf(req));
-  return created(req, id, null, parsed.data);
+  const id = createQuestion(parsed.data, rebuilt.headers.get("x-a-eye-agent")?.slice(0, 64) || undefined, undefined, originOf(rebuilt));
+  return created(rebuilt, id, null, parsed.data);
 }
 
 async function created(req: Request, id: string, paymentTx: string | null, input: Parameters<typeof createQuestion>[0]) {

@@ -47,8 +47,8 @@ describe("notifyNearbyQuestion", () => {
 
   it("sends only to nearby subscribers with the expected payload, and rate-limits repeats", async () => {
     vapid();
-    const near = addSub("https://push.test/near");
-    addSub("https://push.test/far", 38.5, -122.2536);
+    const near = addSub("https://fcm.googleapis.com/test/near");
+    addSub("https://fcm.googleapis.com/test/far", 38.5, -122.2536);
     const send = vi.fn().mockResolvedValue({});
     const res = await push.notifyNearbyQuestion(Q, { send, now: Date.now });
     expect(res).toEqual({ sent: 1, failed: 0 });
@@ -76,10 +76,19 @@ describe("notifyNearbyQuestion", () => {
 
   it("deletes the subscription on a 410 from the push service", async () => {
     vapid();
-    const gone = addSub("https://push.test/gone");
+    const gone = addSub("https://fcm.googleapis.com/test/gone");
     const send = vi.fn().mockRejectedValue(Object.assign(new Error("gone"), { statusCode: 410 }));
     const res = await push.notifyNearbyQuestion(Q, { send, now: Date.now });
     expect(res).toEqual({ sent: 0, failed: 1 });
     expect(store.pushSubscriptionsNear(37.8716, -122.2536, 1500).map((s) => s.endpoint)).not.toContain(gone.endpoint);
+  });
+
+  it("does not send to a disallowed endpoint already present in storage", async () => {
+    vapid();
+    addSub("https://169.254.169.254/latest/meta-data/");
+    const send = vi.fn();
+    const res = await push.notifyNearbyQuestion(Q, { send, now: Date.now });
+    expect(res).toEqual({ sent: 0, failed: 0 });
+    expect(send).not.toHaveBeenCalled();
   });
 });
