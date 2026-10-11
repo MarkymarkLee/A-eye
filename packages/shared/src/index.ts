@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// Strict CSP (no eval) — zod v4's JIT compiler probes Function(""); run jitless instead.
+z.config({ jitless: true });
+
 // Shared contract between the web API and the MCP server.
 
 export const QuestionStatus = z.enum(["open", "closed", "settled", "expired"]);
@@ -154,6 +157,18 @@ export type Evidence = {
 
 export const PayoutRail = z.enum(["evm", "xrpl"]);
 export type PayoutRail = z.infer<typeof PayoutRail>;
+
+export const ObserverPrize = z.object({
+  question_id: z.string(),
+  prompt: z.string(),
+  place_label: z.string().nullable(),
+  amount: z.number(),
+  rail: z.enum(["ausd", "xrpl"]),
+  status: z.enum(["needs_wallet", "sending", "paid"]),
+  receipt_url: z.string().optional(),
+  won_at: z.string(),
+});
+export type ObserverPrize = z.infer<typeof ObserverPrize>;
 
 /** XRPL testnet pot escrow for a question; tx fields are hashes, *_url are explorer links. */
 export type XrplPotInfo = {

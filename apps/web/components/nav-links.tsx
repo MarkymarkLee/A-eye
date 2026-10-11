@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Bot, Map, Radio, Trophy, UserRound, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -16,9 +17,41 @@ export const LINKS: { href: string; label: string; short?: string; icon: LucideI
 ];
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+const PRIZES_SEEN_KEY = "aeye:prizes-seen";
+
+function usePrizeWaiting(path: string) {
+  const [waiting, setWaiting] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/me/prizes", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        let seen: string[] = [];
+        try {
+          const stored: unknown = JSON.parse(localStorage.getItem(PRIZES_SEEN_KEY) ?? "[]");
+          if (Array.isArray(stored)) seen = stored.filter((id): id is string => typeof id === "string");
+        } catch {}
+        setWaiting(
+          data.prizes?.some(
+            (prize: { question_id: string; status: string }) =>
+              prize.status === "needs_wallet" || (prize.status === "paid" && !seen.includes(prize.question_id)),
+          ) ?? false,
+        );
+      })
+      .catch(() => {
+        if (active) setWaiting(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [path]);
+  return waiting;
+}
 
 export function NavLinks() {
   const path = usePathname();
+  const prizeWaiting = usePrizeWaiting(path);
   return (
     <nav aria-label="Main" className="hidden items-center gap-1 text-[14px] md:flex">
       {LINKS.map((l) => {
@@ -28,6 +61,7 @@ export function NavLinks() {
             key={l.href}
             href={l.href}
             aria-current={active ? "page" : undefined}
+            aria-label={l.href === "/me" && prizeWaiting ? "Me, prize waiting" : undefined}
             className={cn("relative rounded-full px-3.5 py-2 font-medium transition-colors", active ? "text-ink" : "text-muted hover:text-ink")}
           >
             {active && (
@@ -37,7 +71,12 @@ export function NavLinks() {
                 transition={{ type: "spring", stiffness: 420, damping: 34 }}
               />
             )}
-            <span className="relative">{l.label}</span>
+            <span className="relative">
+              {l.label}
+              {l.href === "/me" && prizeWaiting && (
+                <span role="img" aria-label="Prize waiting" className="absolute -right-1 -top-0.5 size-2 rounded-full bg-accent" />
+              )}
+            </span>
           </Link>
         );
       })}
@@ -48,6 +87,7 @@ export function NavLinks() {
 /** Thumb-reachable tab bar on phones. Hidden on the answer screen, which has its own sticky action. */
 export function TabBar() {
   const path = usePathname();
+  const prizeWaiting = usePrizeWaiting(path);
   if (/^\/q\/[^/]+\/answer/.test(path)) return null;
   return (
     <nav
@@ -65,6 +105,7 @@ export function TabBar() {
                 href={l.href}
                 onClick={() => haptic("tap")}
                 aria-current={active ? "page" : undefined}
+                aria-label={l.href === "/me" && prizeWaiting ? "Me, prize waiting" : undefined}
                 className={cn(
                   "relative flex h-full flex-col items-center justify-center gap-0.5 text-[11.5px] font-medium transition-colors",
                   active ? "text-ink" : "text-muted",
@@ -77,7 +118,12 @@ export function TabBar() {
                     transition={{ type: "spring", stiffness: 420, damping: 34 }}
                   />
                 )}
-                <Icon aria-hidden className={cn("relative size-[22px]", active && "text-accent-ink")} strokeWidth={active ? 2.4 : 2} />
+                <span className="relative">
+                  <Icon aria-hidden className={cn("relative size-[22px]", active && "text-accent-ink")} strokeWidth={active ? 2.4 : 2} />
+                  {l.href === "/me" && prizeWaiting && (
+                    <span role="img" aria-label="Prize waiting" className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-accent" />
+                  )}
+                </span>
                 <span className="relative mt-1">{l.short ?? l.label}</span>
               </Link>
             </li>

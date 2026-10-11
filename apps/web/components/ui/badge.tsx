@@ -9,7 +9,7 @@ export const badgeVariants = cva("inline-flex items-center gap-1.5 rounded-full 
       ok: "bg-ok-soft text-ok",
       warn: "bg-warn-soft text-warn",
       bad: "bg-bad-soft text-bad",
-      sky: "bg-[color-mix(in_oklab,var(--sky)_14%,var(--surface))] text-sky",
+      sky: "bg-[color-mix(in_oklab,var(--sky)_14%,var(--surface))] text-[color-mix(in_oklab,var(--sky)_70%,var(--ink))]",
       solid: "bg-accent text-on-accent",
     },
     size: { sm: "h-6 px-2.5 text-[12px]", md: "h-7 px-3 text-[13px]" },

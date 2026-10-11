@@ -138,7 +138,7 @@ export function LiveDashboard({
             <h2 className="text-[17px] font-semibold tracking-tight">Scan to answer</h2>
             <p className="mt-1 text-[14px] leading-snug text-muted">Open the camera, answer a question nearby, enter the raffle.</p>
             <div
-              className="mt-4 rounded-[12px] bg-white p-4 [&>svg]:h-auto [&>svg]:w-full"
+              className="mx-auto mt-4 max-w-[320px] rounded-[12px] bg-white p-4 lg:max-w-none [&>svg]:h-auto [&>svg]:w-full"
               role="img"
               aria-label={`QR code for ${host}`}
               dangerouslySetInnerHTML={{ __html: qrSvg }}
@@ -262,7 +262,7 @@ function Counter({ label, value, sub, accent, extra }: { label: string; value: n
       <dd className={`mt-1 font-mono text-[40px] font-semibold leading-none tracking-tight md:text-[56px] ${accent ? "text-accent-ink" : ""}`}>
         {value}
       </dd>
-      <p className="mt-2 truncate text-[12.5px] text-muted">{sub}</p>
+      <dd className="mt-2 truncate text-[12.5px] text-muted">{sub}</dd>
     </div>
   );
 }

@@ -162,6 +162,7 @@ export function QuestionMap({ center, questions, fix, selectedId, onSelect }: Pr
           <span class="absolute size-5 rounded-full bg-sky/40 animate-pulse-ring"></span>
           <span class="relative size-4 rounded-full border-[3px] border-white bg-sky shadow-lift"></span>
         </span>`;
+      dot.setAttribute("role", "img");
       dot.setAttribute("aria-label", "You are here");
       me.current = new maplibregl.Marker({ element: dot }).setLngLat([fix.lng, fix.lat]).addTo(m);
       if (!framed.current) m.easeTo({ center: [fix.lng, fix.lat], duration: 800 });

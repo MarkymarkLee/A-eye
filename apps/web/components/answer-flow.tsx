@@ -13,17 +13,20 @@ import {
   Globe,
   LocateFixed,
   Navigation,
+  Plus,
   RotateCcw,
   Satellite,
   Send,
   Ticket,
-  Wallet, Plus } from "lucide-react";
+  Wallet,
+} from "lucide-react";
 import { GEO_RULES, PLATFORM_FEE, type QuestionSummary } from "@a-eye/shared";
 import { useLocation, type Fix, type LocationState } from "@/hooks/use-location";
 import { usePermission } from "@/hooks/use-permission";
 import { distanceM, formatDistance } from "@/lib/geo";
 import { celebrate } from "@/lib/confetti";
 import { haptic } from "@/lib/haptics";
+import { browserSupportsPasskeys, startPasskeyRegistration } from "@/lib/passkey-client";
 import { directionsUrl, walkHint } from "@/lib/walk";
 import { cn } from "@/lib/cn";
 import { matchSpokenOption, spokenQuestion } from "@/lib/voice-match";
@@ -41,8 +44,9 @@ import { useNow } from "@/hooks/use-now";
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
 type Phase = { kind: "idle" } | { kind: "sending"; progress: number } | { kind: "done"; distance_m: number };
+const currencyCopy = (currency: string) => (currency === "AUSD" || currency === "RLUSD" ? "test dollars" : currency);
 
-export function AnswerFlow({ question: q }: { question: Question }) {
+export function AnswerFlow({ question: q, voice }: { question: Question; voice: boolean }) {
   const perm = usePermission("geolocation");
   const [asked, setAsked] = useState(false);
   // Only start GPS (which can trigger the browser prompt) once we've explained why, or it's already allowed.
@@ -54,6 +58,15 @@ export function AnswerFlow({ question: q }: { question: Question }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [heard, setHeard] = useState<{ text: string; index: number | null } | null>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  function moveChoice(from: number, delta: number) {
+    const n = q.options.length;
+    const next = (from + delta + n) % n;
+    setChoice(next);
+    haptic("select");
+    optionRefs.current[next]?.focus();
+  }
 
   function onTranscript(text: string) {
     const index = matchSpokenOption(text, q.options);
@@ -123,7 +136,7 @@ export function AnswerFlow({ question: q }: { question: Question }) {
         <div className="md:sticky md:top-[84px] md:self-start">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="solid" size="md">
-              <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {q.currency}
+              <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {currencyCopy(q.currency)}
             </Badge>
             <TestMoney />
             <Badge size="md">
@@ -137,9 +150,11 @@ export function AnswerFlow({ question: q }: { question: Question }) {
             <h1 className="mt-3 text-[28px] font-semibold leading-[1.12] tracking-tight text-balance md:text-[40px]">{q.prompt}</h1>
           </Morph>
           {q.place_label && <p className="mt-2 text-[15px] text-muted">{q.place_label}</p>}
-          <div className="mt-3">
-            <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
-          </div>
+          {voice && (
+            <div className="mt-3">
+              <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
+            </div>
+          )}
           {q.web_baseline && (
             <p className="mt-4 flex max-w-[52ch] gap-2.5 rounded-[16px] bg-surface-2 p-3.5 text-[14px] leading-relaxed text-muted">
               <Globe className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -172,15 +187,17 @@ export function AnswerFlow({ question: q }: { question: Question }) {
                 What do you see?
               </StepTitle>
             </legend>
-            <div className="mt-3">
-              <SpeakAnswerButton onTranscript={onTranscript} />
-              {heard && (
-                <p className="mt-2 text-[13px] leading-snug text-muted" aria-live="polite">
-                  Heard &ldquo;{heard.text}&rdquo;.{" "}
-                  {heard.index !== null ? `Picked ${q.options[heard.index]}.` : "Tap the answer that matches."}
-                </p>
-              )}
-            </div>
+            {voice && (
+              <div className="mt-3">
+                <SpeakAnswerButton onTranscript={onTranscript} />
+                {heard && (
+                  <p className="mt-2 text-[13px] leading-snug text-muted" aria-live="polite">
+                    Heard &ldquo;{heard.text}&rdquo;.{" "}
+                    {heard.index !== null ? `Picked ${q.options[heard.index]}.` : "Tap the answer that matches."}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="mt-3 grid gap-2" role="radiogroup" aria-label="Answer options">
               {q.options.map((opt, i) => {
                 const active = choice === i;
@@ -191,6 +208,19 @@ export function AnswerFlow({ question: q }: { question: Question }) {
                     role="radio"
                     aria-checked={active}
                     whileTap={{ scale: 0.98 }}
+                    ref={(el) => {
+                      optionRefs.current[i] = el;
+                    }}
+                    tabIndex={choice === i || (choice === null && i === 0) ? 0 : -1}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+                        e.preventDefault();
+                        moveChoice(i, 1);
+                      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        moveChoice(i, -1);
+                      }
+                    }}
                     onClick={() => {
                       setChoice(i);
                       haptic("select");
@@ -237,6 +267,8 @@ export function AnswerFlow({ question: q }: { question: Question }) {
               </label>
               <textarea
                 id="note"
+                name="free_text"
+                autoComplete="off"
                 rows={2}
                 maxLength={280}
                 value={freeText}
@@ -361,14 +393,16 @@ function Presence(props: {
         <Row icon={<Satellite className="size-5" aria-hidden />} tone="warn" title={blocked ? "Location is off" : "Can’t find you yet"}>
           {blocked
             ? "We only use it to check you’re at the spot. Nobody else sees it."
-            : loc.status === "denied"
-              ? loc.message
-              : ""}
+            : "Step outside or near a window, then try again."}
         </Row>
-        {blocked && (
+        {blocked ? (
           <div className="mt-3">
             <PermissionHelp what="location" onRetry={() => location.reload()} />
           </div>
+        ) : (
+          <Button className="mt-3" block size="lg" variant="secondary" onClick={() => location.reload()}>
+            Try again
+          </Button>
         )}
       </div>
     );
@@ -515,6 +549,9 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
     } catch (e) {
       if (e instanceof DOMException && e.name === "NotAllowedError") {
         setState("blocked");
+      } else if (e instanceof DOMException && (e.name === "NotFoundError" || e.name === "OverconstrainedError")) {
+        setState("error");
+        setMessage("We couldn’t find a camera. Open this page on a phone with a camera.");
       } else {
         setState("error");
         setMessage("The camera didn’t start. Close other apps using it and try again.");
@@ -685,9 +722,17 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
       clearTimeout(timer);
     };
   }, [closed, q.id]);
+  const [hasPasskey, setHasPasskey] = useState<boolean | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [saveDismissed, setSaveDismissed] = useState(true);
+  const [savingPasskey, setSavingPasskey] = useState(false);
 
   useEffect(() => {
     void celebrate();
+    setPasskeySupported(browserSupportsPasskeys());
+    try {
+      setSaveDismissed(localStorage.getItem("aeye:passkey-save-dismissed") === "1");
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -699,7 +744,8 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         .then((r) => r.json())
         .catch(() => ({ entries: [] })),
     ])
-      .then(([j, me]: [{ questions: QuestionSummary[] }, { entries?: { question_id: string }[] }]) => {
+      .then(([j, me]: [{ questions: QuestionSummary[] }, { entries?: { question_id: string }[]; account?: { has_passkey?: boolean } }]) => {
+        setHasPasskey(Boolean(me.account?.has_passkey));
         const done = new Set([q.id, ...(me.entries ?? []).map((e) => e.question_id)]);
         const open = j.questions
           .filter((x) => x.status === "open" && !done.has(x.id))
@@ -708,6 +754,40 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
       })
       .catch(() => setNext(null));
   }, [q.id, q.lat, q.lng, fix?.lat, fix?.lng]);
+
+  async function saveAccount() {
+    setSavingPasskey(true);
+    try {
+      const optionsResponse = await fetch("/api/auth/passkey/register/options", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const optionsData = await optionsResponse.json().catch(() => ({}));
+      if (!optionsResponse.ok) throw new Error(optionsData.error ?? "We couldn't start saving your account.");
+      const response = await startPasskeyRegistration(optionsData.options);
+      const saved = await fetch("/api/auth/passkey/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
+      const savedData = await saved.json().catch(() => ({}));
+      if (!saved.ok) throw new Error(savedData.error ?? "We couldn't save your account.");
+      setHasPasskey(true);
+      toast.success("Your account is saved");
+    } catch (error) {
+      toast.error("Couldn't save your account", { description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSavingPasskey(false);
+    }
+  }
+
+  function dismissSavePrompt() {
+    setSaveDismissed(true);
+    try {
+      localStorage.setItem("aeye:passkey-save-dismissed", "1");
+    } catch {}
+  }
 
   const entries = q.responses + 1;
   return (
@@ -729,7 +809,7 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         </div>
         <p className="mt-5 text-[13px] font-medium opacity-85">Prize</p>
         <p className="text-[38px] font-bold leading-none tabular-nums">
-          {payout(q)} <span className="text-[18px]">{q.currency}</span>
+          {payout(q)} <span className="text-[18px]">{currencyCopy(q.currency)}</span>
         </p>
         <div className="mt-5 border-t border-dashed border-white/40 pt-3 text-[13px] font-medium opacity-90">
           {!closed ? (
@@ -757,6 +837,20 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         <p className="mx-auto mt-2 max-w-[36ch] text-[15.5px] leading-relaxed text-muted">
           Verified {formatDistance(distance)} from the spot. When the question closes, one answer wins the prize.
         </p>
+        {hasPasskey === false && passkeySupported && !saveDismissed && (
+          <div className="mx-auto mt-3 max-w-[430px] rounded-[18px] bg-surface p-3.5 text-left shadow-panel ring-1 ring-line">
+            <p className="text-[14px] font-semibold">Keep your ticket safe</p>
+            <p className="mt-0.5 text-[13px] text-muted">Save your account with Face ID so you can collect your prize on any phone.</p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <Button size="sm" onClick={() => void saveAccount()} disabled={savingPasskey}>
+                {savingPasskey ? "Saving…" : "Save with Face ID"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissSavePrompt} disabled={savingPasskey}>
+                Not now
+              </Button>
+            </div>
+          </div>
+        )}
       </motion.div>
 
       <motion.section
@@ -776,7 +870,7 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
             </div>
             <p className="mt-1.5 text-[17px] font-semibold leading-snug tracking-tight">{next.prompt}</p>
             <p className="mt-1 text-[13.5px] text-muted">
-              Win {payout(next)} {next.currency}
+              Win {payout(next)} {currencyCopy(next.currency)}
               {next.distance_m !== undefined && <> · {walkHint(next.distance_m)}</>}
             </p>
             <Button asChild size="lg" block className="mt-3.5">

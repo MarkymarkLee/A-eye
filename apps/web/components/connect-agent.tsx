@@ -47,7 +47,11 @@ function CopyButton({ value, label, className }: { value: string; label: string;
 function Code({ value, label, prompt }: { value: string; label: string; prompt?: boolean }) {
   return (
     <div className="relative mt-3 rounded-[16px] bg-[#0f1216] ring-1 ring-white/5">
-      <pre className="overflow-x-auto py-3.5 pl-4 pr-12 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
+      <pre
+        tabIndex={0}
+        aria-label={label}
+        className="overflow-x-auto py-3.5 pl-4 pr-12 font-mono text-[12.5px] leading-relaxed text-[#d6dae0] focus-visible:outline-2 focus-visible:outline-accent"
+      >
         {prompt && <span className="select-none text-[#6b7480]">$ </span>}
         {value}
       </pre>

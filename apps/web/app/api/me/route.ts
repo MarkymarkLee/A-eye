@@ -2,10 +2,33 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isSafeText, PayoutRail } from "@a-eye/shared";
 import { currentObserver } from "@/lib/observer";
-import { maybeIssueObserverCredential, observerCredential, observerEntries, observerStats, updateObserver } from "@/lib/store";
+import {
+  maybeIssueObserverCredential,
+  observerCredential,
+  observerEntries,
+  observerPrizes,
+  observerStats,
+  passkeysFor,
+  retryWinnerPayouts,
+  updateObserver,
+} from "@/lib/store";
 import { isClassicAddress } from "@/lib/xrpl";
 import { isCrossSiteRequest } from "@/lib/same-origin";
 import { readBodyText } from "@/lib/body";
+import { passkeyWalletEnabled } from "@/lib/smart-wallet";
+
+function accountFor(observer: Awaited<ReturnType<typeof currentObserver>>) {
+  const passkeys = passkeysFor(observer.id);
+  const hasPasskeyWallet = Boolean(
+    observer.evm_address && passkeys.some((passkey) => passkey.wallet_address?.toLowerCase() === observer.evm_address!.toLowerCase()),
+  );
+  return {
+    has_passkey: passkeys.length > 0,
+    wallet: observer.evm_address
+      ? { address: observer.evm_address, source: hasPasskeyWallet ? ("passkey" as const) : ("pasted" as const) }
+      : null,
+  };
+}
 
 const Patch = z
   .object({
@@ -32,6 +55,9 @@ export async function GET() {
     entries: observerEntries(obs.id),
     stats: await observerStats(obs.id),
     xrpl: observerCredential(obs.id),
+    account: accountFor(obs),
+    prizes: observerPrizes(obs.id),
+    passkey_wallet_enabled: passkeyWalletEnabled(),
   });
 }
 
@@ -62,6 +88,7 @@ export async function PUT(req: Request) {
     evm_address: evm_address === "" ? null : evm_address,
     xrpl_address: xrpl_address === "" ? null : xrpl_address,
   });
+  if (evm_address && evm_address !== obs.evm_address) retryWinnerPayouts(obs.id);
   await maybeIssueObserverCredential(obs.id);
-  return NextResponse.json({ observer: updated, xrpl: observerCredential(obs.id) });
+  return NextResponse.json({ observer: updated, xrpl: observerCredential(obs.id), account: accountFor(updated) });
 }

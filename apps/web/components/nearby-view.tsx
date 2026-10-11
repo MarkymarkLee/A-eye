@@ -6,10 +6,12 @@ import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Camera, ChevronRight, Compass, LocateFixed, MapPinOff, Navigation, Sparkles, Users } from "lucide-react";
 import type { QuestionSummary } from "@a-eye/shared";
 import { useLocation, type LocationState } from "@/hooks/use-location";
+import { useLocalFlag } from "@/hooks/use-local-flag";
 import { haptic } from "@/lib/haptics";
 import { walkHint, directionsUrl } from "@/lib/walk";
 import { cn } from "@/lib/cn";
 import { Morph } from "./motion/page";
+import { ONBOARDED_KEY } from "./onboarding";
 import { InstallPrompt } from "./install-prompt";
 import { PermissionHelp } from "./permission-help";
 import { PushOptIn } from "./push-opt-in";
@@ -32,7 +34,9 @@ const FALLBACK = { lat: 37.8713, lng: -122.2596 };
 const RADIUS_KM = 5;
 
 export function NearbyView() {
-  const loc = useLocation();
+  // Don't pop the browser's location prompt while the onboarding ask is still up.
+  const [onboarded] = useLocalFlag(ONBOARDED_KEY);
+  const loc = useLocation(onboarded === true);
   const [questions, setQuestions] = useState<QuestionSummary[] | null>(null);
   const [error, setError] = useState(false);
   const [selected, setSelected] = useState<string | undefined>();

@@ -6,7 +6,9 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { generatePrivateKey } from "viem/accounts";
 import { CreateQuestionInput } from "@a-eye/shared";
 
+const winnerPushSend = vi.hoisted(() => vi.fn());
 vi.mock("server-only", () => ({}));
+vi.mock("web-push", () => ({ default: { sendNotification: winnerPushSend } }));
 vi.mock("node:dns", () => ({
   promises: { lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]) },
 }));
@@ -122,6 +124,10 @@ beforeEach(() => {
   currentBlockNumber.mockReset().mockResolvedValue(100n);
   ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
   vi.stubEnv("A_EYE_PAYOUT_RAIL", "");
+  vi.stubEnv("VAPID_PUBLIC_KEY", "");
+  vi.stubEnv("VAPID_PRIVATE_KEY", "");
+  vi.stubEnv("VAPID_SUBJECT", "");
+  winnerPushSend.mockReset().mockResolvedValue(undefined);
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -500,6 +506,104 @@ describe("core loop correctness", () => {
     await store.flushTreasuryTransfers();
     expect(transferAusd).toHaveBeenCalledWith(evm, BigInt(2_250_000), expect.anything());
     expect(transfers(id)[0]).toMatchObject({ state: "paid", to_address: evm });
+  });
+
+  it("retries a prize after its wallet is set and claims concurrent retries only once", async () => {
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observer = store.getOrCreateObserver(`wallet-retry-${id}`);
+    expect(await submit(id, `wallet-retry-${id}`)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({ kind: "payout", state: "pending", to_address: null });
+    expect(store.observerPrizes(observer.id)).toMatchObject([{ question_id: id, status: "needs_wallet" }]);
+
+    const address = "0x00000000000000000000000000000000000000da";
+    store.updateObserver(observer.id, { evm_address: address });
+    store.retryWinnerPayouts(observer.id);
+    store.retryWinnerPayouts(observer.id);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+
+    expect(transferAusd).toHaveBeenCalledTimes(1);
+    expect(transfers(id)[0]).toMatchObject({ kind: "payout", state: "paid", to_address: address, tx: PAYOUT_TX });
+    expect(store.observerPrizes(observer.id)).toMatchObject([
+      {
+        question_id: id,
+        rail: "ausd",
+        status: "paid",
+        receipt_url: `https://sepolia.basescan.org/tx/${PAYOUT_TX}`,
+      },
+    ]);
+  });
+
+  it("sends one winner-only push after settlement and does not repeat on a resumed sweep", async () => {
+    vi.stubEnv("VAPID_PUBLIC_KEY", "BPubKey");
+    vi.stubEnv("VAPID_PRIVATE_KEY", "PrivKey");
+    vi.stubEnv("VAPID_SUBJECT", "https://a-eye.test");
+    const id = ask({ min_responses: 1, max_responses: 1, place_label: "Chou Hall" }, paid);
+    const winnerId = `push-winner-${id}`;
+    const otherId = `push-other-${id}`;
+    store.savePushSubscription({
+      observerId: store.getOrCreateObserver(winnerId).id,
+      endpoint: `https://fcm.googleapis.com/winner/${id}`,
+      p256dh: "winner-key",
+      auth: "winner-auth",
+    });
+    store.savePushSubscription({
+      observerId: store.getOrCreateObserver(otherId).id,
+      endpoint: `https://fcm.googleapis.com/other/${id}`,
+      p256dh: "other-key",
+      auth: "other-auth",
+    });
+
+    expect(await submit(id, winnerId)).toMatchObject({ ok: true, closed: true });
+    await store.flushWinnerPushes();
+    expect(winnerPushSend).toHaveBeenCalledTimes(1);
+    const [subscription, rawPayload, options] = winnerPushSend.mock.calls[0]!;
+    expect(subscription.endpoint).toBe(`https://fcm.googleapis.com/winner/${id}`);
+    expect(JSON.parse(rawPayload)).toEqual({
+      title: "You won!",
+      body: "You won 2.25 test dollars at Chou Hall — tap to collect",
+      url: `/me?prize=${id}`,
+      tag: `won-${id}`,
+    });
+    expect(options).toMatchObject({ TTL: 86_400, urgency: "high" });
+
+    store.db()
+      .prepare("update questions set status = 'closed', closed_at = ? where id = ?")
+      .run(new Date(Date.now() - 3 * 60_000).toISOString(), id);
+    expect(await store.settleDue()).toBe(1);
+    await store.flushWinnerPushes();
+    expect(winnerPushSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not notify for an unpaid winner and removes subscriptions rejected with 410", async () => {
+    vi.stubEnv("VAPID_PUBLIC_KEY", "BPubKey");
+    vi.stubEnv("VAPID_PRIVATE_KEY", "PrivKey");
+    vi.stubEnv("VAPID_SUBJECT", "https://a-eye.test");
+    const unpaid = ask({ min_responses: 1, max_responses: 1 });
+    const unpaidObserver = `push-unpaid-${unpaid}`;
+    store.savePushSubscription({
+      observerId: store.getOrCreateObserver(unpaidObserver).id,
+      endpoint: `https://fcm.googleapis.com/unpaid/${unpaid}`,
+      p256dh: "k",
+      auth: "a",
+    });
+    expect(await submit(unpaid, unpaidObserver)).toMatchObject({ ok: true, closed: true });
+    await store.flushWinnerPushes();
+    expect(winnerPushSend).not.toHaveBeenCalled();
+
+    const gone = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const goneObserver = `push-gone-${gone}`;
+    const endpoint = `https://fcm.googleapis.com/gone/${gone}`;
+    store.savePushSubscription({
+      observerId: store.getOrCreateObserver(goneObserver).id,
+      endpoint,
+      p256dh: "k",
+      auth: "a",
+    });
+    winnerPushSend.mockRejectedValueOnce(Object.assign(new Error("gone"), { statusCode: 410 }));
+    expect(await submit(gone, goneObserver)).toMatchObject({ ok: true, closed: true });
+    await store.flushWinnerPushes();
+    expect(store.pushSubscriptionsFor(store.getOrCreateObserver(goneObserver).id).map((sub) => sub.endpoint)).not.toContain(endpoint);
   });
 
   it("an XRPL-rail winner of a non-escrowed question still awaits an AUSD address", async () => {
