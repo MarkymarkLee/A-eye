@@ -20,6 +20,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@radix-ui/react-collapsible": "^1.1.21",
     "@radix-ui/react-slot": "^1.4.0",
+    "@radix-ui/react-tabs": "^1.1.22",
     "@x402/core": "^2.28.0",
     "@x402/evm": "^2.28.0",
     "canvas-confetti": "^1.9.4",
@@ -37,8 +38,8 @@
     "tailwind-merge": "^3.7.0",
     "vaul": "^1.1.2",
     "viem": "^2.57.4",
-    "xrpl": "5.3.0",
     "web-push": "^3.6.7",
+    "xrpl": "5.3.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
