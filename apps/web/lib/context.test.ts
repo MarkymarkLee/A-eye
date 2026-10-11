@@ -8,6 +8,14 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -117,28 +125,43 @@ describe("placeContext", () => {
     });
   });
 
-  it("builds a Context.dev-only place when the reverse lookup fails", async () => {
+  it("does not search Context.dev for an unnamed OSM place", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
-      .mockResolvedValueOnce(jsonResponse({ results: [{ url: "https://example.com/place", title: "A Place" }] }));
+      .mockResolvedValueOnce(
+        jsonResponse({
+          name: "",
+          type: "toilets",
+          display_name: "Piedmont Avenue, Berkeley",
+          osm_type: "node",
+          osm_id: 56,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ name: " " }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("CONTEXT_DEV_API_KEY", "test-key");
 
-    const place = await placeContext(7, 8);
+    const place = await placeContext(31.2345, -117.6543);
 
     expect(place).toMatchObject({
-      name: "A Place",
-      address: null,
-      provider: "context.dev",
-      website: null,
-      summary: "A Place",
-      sources: ["https://example.com/place"],
+      name: null,
+      category: "toilets",
+      provider: "osm",
+      sources: ["https://www.openstreetmap.org/node/56"],
     });
-    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
-      query: "places near 7, 8",
-      numResults: 10,
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchMock.mock.calls.every(([input]) => new URL(String(input)).hostname === "nominatim.openstreetmap.org"),
+    ).toBe(true);
+  });
+
+  it("does not search Context.dev when the reverse lookup fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("CONTEXT_DEV_API_KEY", "test-key");
+
+    await expect(placeContext(7, 8)).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns null without throwing when the OSM request times out", async () => {
@@ -223,6 +246,66 @@ describe("webBaseline", () => {
 
     expect(contained).toMatchObject({ option_index: 1, option: "No", confidence: "medium" });
     expect(ambiguous).toMatchObject({ option_index: null, option: null, confidence: null });
+  });
+
+  it("serializes concurrent Context.dev requests until the first response resolves", async () => {
+    const firstResponse = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockResolvedValueOnce(
+        jsonResponse({
+          json_content: { answer: "Yes, according to the listing.", option: "Yes", confidence: "high" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("CONTEXT_DEV_API_KEY", "test-key");
+
+    const first = webBaseline("Question one?", ["Yes", "No"], 11, 12);
+    const second = webBaseline("Question two?", ["Yes", "No"], 13, 14);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    firstResponse.resolve(
+      jsonResponse({
+        json_content: { answer: "No, according to the listing.", option: "No", confidence: "medium" },
+      }),
+    );
+    await expect(first).resolves.toMatchObject({ answer: "No, according to the listing." });
+    await expect(second).resolves.toMatchObject({ answer: "Yes, according to the listing." });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries one rate-limited Context.dev request after Retry-After", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("rate limited", { status: 429, headers: { "Retry-After": "0" } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          json_content: { answer: "Yes, according to the listing.", option: "Yes", confidence: "high" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("CONTEXT_DEV_API_KEY", "test-key");
+
+    await expect(webBaseline("Question?", ["Yes", "No"], 15, 16)).resolves.toMatchObject({
+      answer: "Yes, according to the listing.",
+      option: "Yes",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns null after the retry is rate-limited too", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("rate limited", { status: 429, headers: { "Retry-After": "0" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("CONTEXT_DEV_API_KEY", "test-key");
+
+    await expect(webBaseline("Question?", ["Yes", "No"], 17, 18)).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("sends the required request shape and treats status/errors as null", async () => {

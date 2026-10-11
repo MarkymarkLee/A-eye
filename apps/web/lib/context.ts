@@ -5,6 +5,7 @@ const NOMINATIM_API = "https://nominatim.openstreetmap.org/reverse";
 const NOMINATIM_USER_AGENT = "A-eye/0.1 (+https://a-eye-1zsv.onrender.com)";
 const PLACE_CACHE_LIMIT = 500;
 const placeCache = new Map<string, PlaceContext>();
+let contextPostQueue: Promise<void> = Promise.resolve();
 
 type NominatimResult = {
   name?: string;
@@ -57,6 +58,39 @@ function validHttpUrl(value: unknown): string | null {
   }
 }
 
+function contextPost(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
+  const request = contextPostQueue.then(async () => {
+    const send = () => {
+      if (signal.aborted) throw signal.reason ?? new Error("aborted");
+      return fetch(`${CONTEXT_API}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.CONTEXT_DEV_API_KEY}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+    };
+
+    let response = await send();
+    if (response.status === 429 && !signal.aborted) {
+      const retryAfter = response.headers.get("retry-after");
+      const seconds = retryAfter?.trim() ? Number(retryAfter) : Number.NaN;
+      const delayMs =
+        Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 3) * 1000 : 1000;
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!signal.aborted) response = await send();
+    }
+    return response;
+  });
+  contextPostQueue = request.then(
+    () => undefined,
+    () => undefined,
+  );
+  return request;
+}
+
 async function nominatimReverse(
   lat: number,
   lng: number,
@@ -79,15 +113,7 @@ async function nominatimReverse(
 }
 
 async function contextSearch(query: string, signal: AbortSignal): Promise<ContextSearchResult[]> {
-  const response = await fetch(`${CONTEXT_API}/web/search`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.CONTEXT_DEV_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query, numResults: 10 }),
-    signal,
-  });
+  const response = await contextPost("/web/search", { query, numResults: 10 }, signal);
   if (!response.ok) return [];
   const payload = (await response.json()) as { results?: ContextSearchResult[] };
   return Array.isArray(payload.results) ? payload.results : [];
@@ -149,40 +175,23 @@ export async function placeContext(
     place = null;
   }
 
-  if (!process.env.CONTEXT_DEV_API_KEY || signal.aborted) {
+  if (!process.env.CONTEXT_DEV_API_KEY || signal.aborted || !place?.name?.trim()) {
     if (place) cachePlace(key, place);
     return place;
   }
 
   try {
-    const query = place
-      ? [place.name, place.address].filter(Boolean).join(" ")
-      : `places near ${lat}, ${lng}`;
+    const query = [place.name, place.address].filter(Boolean).join(" ");
     const results = await contextSearch(query, signal);
     if (results.length) {
       const first = results[0]!;
       const resultUrls = results.map((result) => validHttpUrl(result.url)).filter((url): url is string => Boolean(url));
-      if (!place) {
-        place = {
-          name: first.title?.trim() || null,
-          category: null,
-          address: null,
-          hours: null,
-          website: null,
-          phone: null,
-          summary: first.description ?? first.title ?? null,
-          distance_m: null,
-          provider: "context.dev",
-          sources: [],
-        };
-      } else {
-        place = {
-          ...place,
-          website: place.website ?? resultUrls[0] ?? null,
-          summary: first.description ?? first.title ?? null,
-          provider: "osm+context.dev",
-        };
-      }
+      place = {
+        ...place,
+        website: place.website ?? resultUrls[0] ?? null,
+        summary: place.summary ?? first.description ?? first.title ?? null,
+        provider: "osm+context.dev",
+      };
       place = { ...place, sources: [...new Set([...place.sources, ...resultUrls])] };
     }
   } catch {
@@ -223,20 +232,16 @@ export async function webBaseline(
     `Someone at latitude ${lat}, longitude ${lng}${opts.placeName ? ` (${opts.placeName})` : ""} is asked: "${question}". Options: ${optionList}. Using current web information (business hours, listings, forecasts, news, reviews), what does the web suggest the answer is right now? Set "option" to the exact text of the single most likely option, "answer" to one short sentence with the evidence, "confidence" to low, medium or high, and "source_url" to the best supporting URL.`.slice(0, 2000);
 
   try {
-    const response = await fetch(`${CONTEXT_API}/web/answers`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    const response = await contextPost(
+      "/web/answers",
+      {
         mode: "fast",
         task,
         json_format: { answer: "", option: "", confidence: "low|medium|high", source_url: "" },
         timeoutOpts: { milliseconds: Math.max(1000, timeoutMs - 500), behavior: "return-partial" },
-      }),
+      },
       signal,
-    });
+    );
     if (!response.ok) return null;
     const payload = (await response.json()) as {
       partial?: boolean;
