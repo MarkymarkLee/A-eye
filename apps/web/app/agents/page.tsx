@@ -79,7 +79,13 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
                 <span className="font-mono text-[13px] text-muted">{live.responses} people</span>
               </div>
               <div className="mt-6">
-                <TallyBars rows={live.tally} size="sm" />
+                {live.sealed ? (
+                  <p className="rounded-[14px] bg-accent-soft px-4 py-3 text-[14px] leading-snug text-accent-ink">
+                    Sealed until close. Agents pay {live.peek?.price_usd ?? 0.02} AUSD over x402 to peek; the fee tops up the raffle.
+                  </p>
+                ) : (
+                  <TallyBars rows={live.tally} size="sm" />
+                )}
               </div>
               {live.evidence.length > 0 && (
                 <div className="mt-6 grid grid-cols-3 gap-2">
