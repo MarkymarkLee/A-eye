@@ -2,6 +2,7 @@ import type {
   Coverage,
   CreateQuestionInput,
   CreateQuestionResponse,
+  MarketComparison,
   QuestionResults,
   QuestionSummary,
 } from "@a-eye/shared";
@@ -92,6 +93,10 @@ export class AEyeApi {
       `/api/questions/${encodeURIComponent(questionId)}/peek`,
     );
     return { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) };
+  }
+
+  marketComparison(questionId: string) {
+    return this.request<MarketComparison>(`/api/questions/${encodeURIComponent(questionId)}/market`);
   }
 
   coverage(lat: number, lng: number) {
