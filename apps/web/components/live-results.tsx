@@ -251,7 +251,7 @@ function Prize({ r }: { r: QuestionResults }) {
 
   const prize = `${r.raffle.prize_amount} ${r.raffle.currency}`;
   return (
-    <div id="raffle" className="mt-8 grid scroll-mt-24 gap-3">
+    <div id="raffle" className="mt-8 grid scroll-mt-24 grid-cols-[minmax(0,1fr)] gap-3">
       <Card className={cn("flex items-start gap-3.5 p-5", settled && r.raffle.winner_observer && "bg-accent-soft ring-transparent")}>
         <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-accent to-accent-2 text-white">
           <Trophy className="size-5" aria-hidden />
@@ -518,7 +518,7 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
         Paste this into a browser console or <code className="font-mono">node</code>. It hashes the revealed seed, the block hash and the
         question id, then picks from the sorted submission ids, exactly like the server did.
       </p>
-      <div className="relative mt-3 min-w-0 max-w-full">
+      <div className="relative mt-3 min-w-0 max-w-full [contain:inline-size]">
         <pre className="max-h-[320px] max-w-full overflow-auto whitespace-pre rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed">
           <code>{code}</code>
         </pre>

@@ -210,7 +210,7 @@ export function MeView() {
                   Paste a Base wallet address (it starts with 0x), like MetaMask or Coinbase Wallet. Optional until you win.
                 </p>
               </div>
-              <Disclosure title="Advanced: get paid on the XRP Ledger" defaultOpen={rail === "xrpl"} className="bg-surface-2 ring-0">
+              <Disclosure title="Advanced: XRP Ledger payouts" defaultOpen={rail === "xrpl"} className="bg-surface-2 ring-0">
               <div className="grid gap-4">
               <fieldset className="grid gap-2">
                 <legend className="mb-2 text-[14px] font-semibold">Get paid in</legend>
