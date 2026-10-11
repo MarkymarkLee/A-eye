@@ -1,6 +1,7 @@
 import type { FetchLike } from "@a-eye/mcp/api";
 import { GET as getCoverage } from "@/app/api/coverage/route";
 import { GET as getImage } from "@/app/api/images/[...key]/route";
+import { GET as getMarketComparison } from "@/app/api/questions/[id]/market/route";
 import { GET as getQuestion } from "@/app/api/questions/[id]/route";
 import { GET as getPeek } from "@/app/api/questions/[id]/peek/route";
 import { GET as getMine } from "@/app/api/questions/mine/route";
@@ -35,6 +36,11 @@ export function createInProcessFetch(publicOrigin: string, incoming: Headers): F
       const key = url.pathname.slice("/api/images/".length);
       if (!key) return notFound();
       return getImage(req, { params: Promise.resolve({ key: key.split("/").map(decodeURIComponent) }) });
+    }
+
+    const marketMatch = /^\/api\/questions\/([^/]+)\/market$/.exec(url.pathname);
+    if (method === "GET" && marketMatch) {
+      return getMarketComparison(req, { params: Promise.resolve({ id: decodeURIComponent(marketMatch[1]!) }) });
     }
 
     const peekMatch = /^\/api\/questions\/([^/]+)\/peek$/.exec(url.pathname);

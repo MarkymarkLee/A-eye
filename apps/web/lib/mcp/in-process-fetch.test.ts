@@ -22,6 +22,10 @@ vi.mock("@/app/api/questions/[id]/peek/route", () => ({
   GET: async (_req: Request, { params }: { params: Promise<{ id: string }> }) =>
     Response.json({ peeked: (await params).id }),
 }));
+vi.mock("@/app/api/questions/[id]/market/route", () => ({
+  GET: async (_req: Request, { params }: { params: Promise<{ id: string }> }) =>
+    Response.json({ market: (await params).id }),
+}));
 
 const { createInProcessFetch } = await import("./in-process-fetch");
 const fetchImpl = globalThis.fetch;
@@ -84,6 +88,12 @@ describe("createInProcessFetch", () => {
     const fetch = createInProcessFetch("https://public.example", new Headers());
     const response = await fetch("https://public.example/api/questions/q1/peek");
     expect(await response.json()).toEqual({ peeked: "q1" });
+  });
+
+  it("dispatches market-comparison routes in process", async () => {
+    const fetch = createInProcessFetch("https://public.example", new Headers());
+    const response = await fetch("https://public.example/api/questions/q1/market");
+    expect(await response.json()).toEqual({ market: "q1" });
   });
 
   it("uses global fetch for external presigned image URLs", async () => {

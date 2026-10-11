@@ -63,6 +63,10 @@
       "description": "Pay a small AUSD x402 fee to view interim results before an open question closes."
     },
     {
+      "name": "compare_market",
+      "description": "Compare live Gemini prediction-market odds with the crowd and view recorded sandbox trades."
+    },
+    {
       "name": "wait_for_results",
       "description": "Wait until a question closes or the timeout passes, then return its results."
     },

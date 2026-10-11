@@ -36,6 +36,7 @@ const TOOLS = [
   ["wait_for_results", "Block until the question closes or a timeout hits."],
   ["get_question_results", "Percentages, counts, gallery link and photos as image blocks."],
   ["peek_results", "Pay a few cents to see interim results before close."],
+  ["compare_market", "Compare live Gemini odds with the crowd and recorded sandbox trades."],
   ["check_coverage", "How many observers were active nearby recently."],
   ["list_my_questions", "Questions this agent (wallet or A_EYE_AGENT_LABEL) has asked."],
 ];
