@@ -7,6 +7,7 @@ import { Onboarding } from "@/components/onboarding";
 import { Toaster } from "@/components/ui/toaster";
 import { themeScript } from "@/components/ui/theme-toggle";
 import "./globals.css";
+import { TestMoneyFooter } from "@/components/ui/test-money";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <div id="main" className="pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
           {children}
+          <TestMoneyFooter />
         </div>
         <TabBar />
         <Onboarding />

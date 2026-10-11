@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs } from "@/components/ui/tabs";
 import { loadVaultView } from "@/lib/xrpl-vault-state";
 import { devnetAccount, type VaultRole, type VaultView } from "@/lib/xrpl-lending";
+import { TestMoney } from "@/components/ui/test-money";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -74,7 +75,7 @@ function SourceBadge({ view }: { view: VaultView }) {
   );
 }
 
-function Stat({ label, value, unit, hint }: { label: string; value: string; unit?: string; hint?: string }) {
+function Stat({ label, value, unit, hint }: { label: React.ReactNode; value: string; unit?: string; hint?: string }) {
   return (
     <Card className="min-w-0 p-4 md:p-5">
       <p className="text-[12.5px] text-muted md:text-[13px]">{label}</p>
@@ -142,7 +143,12 @@ export default async function VaultPage() {
 
         <div className="mx-auto max-w-[1200px] px-4 pb-24 md:px-6">
           <section aria-label="Vault stats" className="-mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Total value locked" value={xrp(view.tvl_drops)} unit="XRP" hint={`${xrp(view.available_drops)} XRP available`} />
+            <Stat
+              label={
+                <span className="flex flex-wrap items-center gap-1.5">
+                  Total value locked <TestMoney />
+                </span>
+              } value={xrp(view.tvl_drops)} unit="XRP" hint={`${xrp(view.available_drops)} XRP available`} />
             <Stat
               label="Share price"
               value={view.share_price.toFixed(7)}
@@ -196,7 +202,10 @@ export default async function VaultPage() {
                 );
               })}
             </ol>
-            <h2 className="mt-8 text-2xl font-semibold tracking-tight">Loans</h2>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-semibold tracking-tight">Loans</h2>
+              <TestMoney />
+            </div>
             {view.loans.length === 0 ? (
               <EmptyState className="mt-5" icon={<Landmark className="size-6" />} title="No loans yet" body="The broker has not issued credit from this vault." />
             ) : (
@@ -238,7 +247,10 @@ export default async function VaultPage() {
                 count: view.steps.length,
                 content: (
                   <>
-            <h2 className="text-2xl font-semibold tracking-tight">Capital flow on-chain</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-semibold tracking-tight">Capital flow on-chain</h2>
+              <TestMoney />
+            </div>
             <p className="mt-1 text-[14px] text-muted">
               {view.source === "simulated"
                 ? "Devnet is unavailable, so these are the transactions the demo would submit."

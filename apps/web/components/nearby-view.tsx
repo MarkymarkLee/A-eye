@@ -21,6 +21,7 @@ import { Countdown } from "./ui/countdown";
 import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
 import { Skeleton } from "./ui/skeleton";
+import { TestMoney } from "@/components/ui/test-money";
 
 const QuestionMap = dynamic(() => import("./question-map").then((m) => m.QuestionMap), {
   ssr: false,
@@ -113,6 +114,7 @@ export function NearbyView() {
             <Badge tone="accent" size="md">
               <Sparkles className="size-3.5" aria-hidden /> {Math.round(pot * 100) / 100} {open[0]?.currency} up for grabs
             </Badge>
+            <TestMoney />
             <Badge size="md">
               <Camera className="size-3.5" aria-hidden /> ~20 sec per answer
             </Badge>
@@ -256,9 +258,12 @@ function Preview({ q }: { q: QuestionSummary }) {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         {open ? (
-          <Badge tone="solid" size="md">
-            {q.prize_amount} {q.currency} prize
-          </Badge>
+          <>
+            <Badge tone="solid" size="md">
+              {q.prize_amount} {q.currency} prize
+            </Badge>
+            <TestMoney />
+          </>
         ) : (
           <Badge size="md">Closed</Badge>
         )}
