@@ -13,17 +13,20 @@ import {
   Globe,
   LocateFixed,
   Navigation,
+  Plus,
   RotateCcw,
   Satellite,
   Send,
   Ticket,
-  Wallet, Plus } from "lucide-react";
+  Wallet,
+} from "lucide-react";
 import { GEO_RULES, PLATFORM_FEE, type QuestionSummary } from "@a-eye/shared";
 import { useLocation, type Fix, type LocationState } from "@/hooks/use-location";
 import { usePermission } from "@/hooks/use-permission";
 import { distanceM, formatDistance } from "@/lib/geo";
 import { celebrate } from "@/lib/confetti";
 import { haptic } from "@/lib/haptics";
+import { browserSupportsPasskeys, startPasskeyRegistration } from "@/lib/passkey-client";
 import { directionsUrl, walkHint } from "@/lib/walk";
 import { cn } from "@/lib/cn";
 import { matchSpokenOption, spokenQuestion } from "@/lib/voice-match";
@@ -38,6 +41,7 @@ import { ReadAloudButton, SpeakAnswerButton } from "./voice-controls";
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
 type Phase = { kind: "idle" } | { kind: "sending"; progress: number } | { kind: "done"; distance_m: number };
+const currencyCopy = (currency: string) => (currency === "AUSD" || currency === "RLUSD" ? "test dollars" : currency);
 
 export function AnswerFlow({ question: q }: { question: Question }) {
   const perm = usePermission("geolocation");
@@ -120,7 +124,7 @@ export function AnswerFlow({ question: q }: { question: Question }) {
         <div className="md:sticky md:top-[84px] md:self-start">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="solid" size="md">
-              <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {q.currency}
+              <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {currencyCopy(q.currency)}
             </Badge>
             <Badge size="md">
               <Countdown to={q.closes_at} />
@@ -654,9 +658,17 @@ type Next = Pick<QuestionSummary, "id" | "prompt" | "prize_amount" | "currency" 
 function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fix }) {
   const reduce = useReducedMotion();
   const [next, setNext] = useState<Next | null | undefined>(undefined);
+  const [hasPasskey, setHasPasskey] = useState<boolean | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [saveDismissed, setSaveDismissed] = useState(true);
+  const [savingPasskey, setSavingPasskey] = useState(false);
 
   useEffect(() => {
     void celebrate();
+    setPasskeySupported(browserSupportsPasskeys());
+    try {
+      setSaveDismissed(localStorage.getItem("aeye:passkey-save-dismissed") === "1");
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -668,7 +680,8 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         .then((r) => r.json())
         .catch(() => ({ entries: [] })),
     ])
-      .then(([j, me]: [{ questions: QuestionSummary[] }, { entries?: { question_id: string }[] }]) => {
+      .then(([j, me]: [{ questions: QuestionSummary[] }, { entries?: { question_id: string }[]; account?: { has_passkey?: boolean } }]) => {
+        setHasPasskey(Boolean(me.account?.has_passkey));
         const done = new Set([q.id, ...(me.entries ?? []).map((e) => e.question_id)]);
         const open = j.questions
           .filter((x) => x.status === "open" && !done.has(x.id))
@@ -677,6 +690,40 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
       })
       .catch(() => setNext(null));
   }, [q.id, q.lat, q.lng, fix?.lat, fix?.lng]);
+
+  async function saveAccount() {
+    setSavingPasskey(true);
+    try {
+      const optionsResponse = await fetch("/api/auth/passkey/register/options", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const optionsData = await optionsResponse.json().catch(() => ({}));
+      if (!optionsResponse.ok) throw new Error(optionsData.error ?? "We couldn't start saving your account.");
+      const response = await startPasskeyRegistration(optionsData.options);
+      const saved = await fetch("/api/auth/passkey/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
+      const savedData = await saved.json().catch(() => ({}));
+      if (!saved.ok) throw new Error(savedData.error ?? "We couldn't save your account.");
+      setHasPasskey(true);
+      toast.success("Your account is saved");
+    } catch (error) {
+      toast.error("Couldn't save your account", { description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSavingPasskey(false);
+    }
+  }
+
+  function dismissSavePrompt() {
+    setSaveDismissed(true);
+    try {
+      localStorage.setItem("aeye:passkey-save-dismissed", "1");
+    } catch {}
+  }
 
   const entries = q.responses + 1;
   return (
@@ -695,7 +742,7 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         </div>
         <p className="mt-5 text-[13px] font-medium opacity-85">Prize</p>
         <p className="text-[38px] font-bold leading-none tabular-nums">
-          {payout(q)} <span className="text-[18px]">{q.currency}</span>
+          {payout(q)} <span className="text-[18px]">{currencyCopy(q.currency)}</span>
         </p>
         <div className="mt-5 border-t border-dashed border-white/40 pt-3 text-[13px] font-medium opacity-90">
           Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" /> · {entries === 1 ? "first entry" : `1 of ${entries} entries`}
@@ -712,6 +759,20 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         <p className="mx-auto mt-2 max-w-[36ch] text-[15.5px] leading-relaxed text-muted">
           Verified {formatDistance(distance)} from the spot. When the question closes, one answer wins the prize.
         </p>
+        {hasPasskey === false && passkeySupported && !saveDismissed && (
+          <div className="mx-auto mt-3 max-w-[430px] rounded-[18px] bg-surface p-3.5 text-left shadow-panel ring-1 ring-line">
+            <p className="text-[14px] font-semibold">Keep your ticket safe</p>
+            <p className="mt-0.5 text-[13px] text-muted">Save your account with Face ID so you can collect your prize on any phone.</p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <Button size="sm" onClick={() => void saveAccount()} disabled={savingPasskey}>
+                {savingPasskey ? "Saving…" : "Save with Face ID"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissSavePrompt} disabled={savingPasskey}>
+                Not now
+              </Button>
+            </div>
+          </div>
+        )}
       </motion.div>
 
       <motion.section
@@ -728,7 +789,7 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
             <p className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-accent-ink">Keep going · next one nearby</p>
             <p className="mt-1.5 text-[17px] font-semibold leading-snug tracking-tight">{next.prompt}</p>
             <p className="mt-1 text-[13.5px] text-muted">
-              Win {payout(next)} {next.currency}
+              Win {payout(next)} {currencyCopy(next.currency)}
               {next.distance_m !== undefined && <> · {walkHint(next.distance_m)}</>}
             </p>
             <Button asChild size="lg" block className="mt-3.5">
