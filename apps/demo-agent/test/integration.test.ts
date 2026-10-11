@@ -17,7 +17,12 @@ describe.skipIf(!HAVE_MCP)("integration: mock API + real MCP server", () => {
     const port = (server.address() as { port: number }).port;
     const base = `http://localhost:${port}`;
     const prev = process.env.A_EYE_API_URL;
+    const prevKeys = [process.env.AGENT_PRIVATE_KEY, process.env.A_EYE_AGENT_PRIVATE_KEY];
     process.env.A_EYE_API_URL = base;
+    // The mock never issues a 402 challenge, but unset the wallet keys so the
+    // spawned MCP can't even install a paying fetch in this test.
+    delete process.env.AGENT_PRIVATE_KEY;
+    delete process.env.A_EYE_AGENT_PRIVATE_KEY;
     const bridge = await McpBridge.connect();
     try {
       const ask = await bridge.callTool("ask_location_question", {
@@ -57,6 +62,8 @@ describe.skipIf(!HAVE_MCP)("integration: mock API + real MCP server", () => {
       await bridge.close();
       if (prev === undefined) delete process.env.A_EYE_API_URL;
       else process.env.A_EYE_API_URL = prev;
+      if (prevKeys[0] !== undefined) process.env.AGENT_PRIVATE_KEY = prevKeys[0];
+      if (prevKeys[1] !== undefined) process.env.A_EYE_AGENT_PRIVATE_KEY = prevKeys[1];
       server.close();
     }
   }, 60_000);
