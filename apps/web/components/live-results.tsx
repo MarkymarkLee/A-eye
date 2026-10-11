@@ -173,7 +173,9 @@ function RafflePanel({ r }: { r: QuestionResults }) {
       <p className="mt-1 max-w-[52ch] text-[14px] leading-relaxed text-muted">
         {settled
           ? r.raffle.winner_observer
-            ? `${r.raffle.winner_observer} wins ${r.raffle.prize_amount} ${r.raffle.currency}.`
+            ? r.raffle.xrpl?.payout_tx
+              ? `${r.raffle.winner_observer} wins ${r.raffle.xrpl.amount_xrp} XRP on XRPL.`
+              : `${r.raffle.winner_observer} wins ${r.raffle.prize_amount} ${r.raffle.currency}.`
             : "No winner was drawn."
           : r.status === "expired"
             ? "Too few answers, so there's no draw and the agent gets refunded."

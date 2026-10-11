@@ -284,25 +284,31 @@ export function observerEntries(observerId: string) {
   const rows = db()
     .prepare(
       `select s.id as submission_id, s.option_index, s.captured_at, q.id as question_id, q.prompt, q.options,
-              q.status, q.prize_amount, q.currency, r.winner_submission_id
+              q.status, q.prize_amount, q.currency, r.winner_submission_id, x.payout_tx as xrpl_payout_tx,
+              x.amount_drops as xrpl_drops
          from submissions s
          join questions q on q.id = s.question_id
     left join raffles r on r.question_id = q.id
+    left join xrpl_escrows x on x.question_id = q.id
         where s.observer_id = ?
      order by s.captured_at desc`,
     )
     .all(observerId) as Record<string, unknown>[];
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const won = r.winner_submission_id === r.submission_id;
+    const paidXrp = won && Boolean(r.xrpl_payout_tx);
+    return {
     submission_id: r.submission_id as string,
     question_id: r.question_id as string,
     prompt: r.prompt as string,
     answer: (JSON.parse(r.options as string) as string[])[r.option_index as number]!,
     captured_at: r.captured_at as string,
     status: r.status as QuestionStatus,
-    won: r.winner_submission_id === r.submission_id,
-    prize: payoutAmount(r.prize_amount as number),
-    currency: r.currency as string,
-  }));
+    won,
+    prize: paidXrp ? Number(dropsToXrpString(r.xrpl_drops as string)) : payoutAmount(r.prize_amount as number),
+    currency: paidXrp ? "XRP" : (r.currency as string),
+    };
+  });
 }
 
 // ---------- questions ----------
