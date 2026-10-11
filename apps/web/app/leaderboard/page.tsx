@@ -6,6 +6,7 @@ import { peekObserverId } from "@/lib/observer";
 import type { LeaderboardRange } from "@/lib/reputation";
 import { BadgeIcons, pct } from "@/components/badges";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -91,7 +92,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                   </p>
                   <p className="mt-0.5 text-[13px] text-muted md:hidden">
                     {pct(e.agreement_rate)} agreement · {e.current_streak}-day streak
-                    {e.questions_won > 0 && ` · won ${e.ausd_earned} AUSD`}
+                    {e.questions_won > 0 && ` · won ${formatAmount(e.ausd_earned)} AUSD`}
                   </p>
                 </div>
                 <span className="text-right">
@@ -99,7 +100,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                   <span className="block text-[12px] text-muted md:hidden">answers</span>
                 </span>
                 <span className="hidden text-right tabular-nums md:block">{e.questions_won}</span>
-                <span className="hidden text-right tabular-nums md:block">{e.ausd_earned}</span>
+                <span className="hidden text-right tabular-nums md:block">{formatAmount(e.ausd_earned)}</span>
                 <span className="hidden text-right tabular-nums md:block">
                   {e.current_streak} {e.current_streak === 1 ? "day" : "days"}
                 </span>

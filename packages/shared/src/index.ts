@@ -237,6 +237,7 @@ export type QuestionResults = QuestionSummary & {
   web_baseline?: { answer: string; source: string };
   raffle: RaffleInfo;
   gallery_url: string;
+  closed_at?: string;
   market_trades?: MarketTrade[];
   sealed?: boolean;
   peek?: { price_usd: number; url: string };

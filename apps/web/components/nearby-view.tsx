@@ -22,6 +22,7 @@ import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
 import { Skeleton } from "./ui/skeleton";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount } from "@/lib/money";
 
 const QuestionMap = dynamic(() => import("./question-map").then((m) => m.QuestionMap), {
   ssr: false,
@@ -77,7 +78,7 @@ export function NearbyView() {
   const pot = open.reduce((s, q) => s + q.prize_amount, 0);
 
   return (
-    <main className="grid lg:h-[calc(100dvh-60px)] lg:grid-cols-[minmax(400px,480px)_1fr]">
+    <main className="grid grid-cols-[minmax(0,1fr)] lg:h-[calc(100dvh-60px)] lg:grid-cols-[minmax(400px,480px)_1fr]">
       <div className="relative order-1 h-[44dvh] min-h-[300px] lg:order-2 lg:h-auto">
         <QuestionMap
           center={origin}
@@ -112,7 +113,7 @@ export function NearbyView() {
         {pot > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge tone="accent" size="md">
-              <Sparkles className="size-3.5" aria-hidden /> {Math.round(pot * 100) / 100} {open[0]?.currency} up for grabs
+              <Sparkles className="size-3.5" aria-hidden /> {formatAmount(pot)} {open[0]?.currency} up for grabs
             </Badge>
             <TestMoney />
             <Badge size="md">
@@ -260,7 +261,7 @@ function Preview({ q }: { q: QuestionSummary }) {
         {open ? (
           <>
             <Badge tone="solid" size="md">
-              {q.prize_amount} {q.currency} prize
+              {formatAmount(q.prize_amount)} {q.currency} prize
             </Badge>
             <TestMoney />
           </>

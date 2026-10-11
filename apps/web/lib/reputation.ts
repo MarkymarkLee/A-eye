@@ -1,4 +1,5 @@
 import type { ObserverReputation } from "@a-eye/shared";
+import { roundAmount } from "./money";
 
 /*
  * Observer stats and reputation. Pure functions over answer/win rows so the
@@ -176,7 +177,7 @@ export function computeStats(
     const base = {
       verified_answers: rows.filter((r) => inWindow(r.captured_at)).length,
       questions_won: obsWins.filter((w) => inWindow(w.captured_at)).length,
-      ausd_earned: round2(obsWins.filter((w) => inWindow(w.captured_at)).reduce((s, w) => s + w.prize, 0)),
+      ausd_earned: roundAmount(obsWins.filter((w) => inWindow(w.captured_at)).reduce((s, w) => s + w.prize, 0)),
       current_streak: streak.current,
       best_streak: streak.best,
       agreement_rate: ag.scored > 0 ? round2(ag.agreed / ag.scored) : null,

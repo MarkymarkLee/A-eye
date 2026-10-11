@@ -212,7 +212,7 @@ export default async function VaultPage() {
               <ul className="mt-5 grid gap-3">
                 {view.loans.map((l, i) => (
                   <li key={l.loan_id ?? i}>
-                    <Card className="grid gap-4 p-5 md:grid-cols-[1fr_auto_auto_auto] md:items-center md:gap-8">
+                    <Card className="grid grid-cols-[minmax(0,1fr)] gap-4 p-5 md:grid-cols-[1fr_auto_auto_auto] md:items-center md:gap-8">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <Badge tone={l.status === "open" ? "warn" : "ok"}>{l.status === "open" ? "Open" : "Repaid and closed"}</Badge>

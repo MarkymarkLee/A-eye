@@ -23,6 +23,7 @@ import { Sheet } from "./ui/sheet";
 import { MarketVsHumans } from "./market-vs-humans";
 import { MoneyTimeline, PotBreakdown } from "./money-timeline";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount } from "@/lib/money";
 
 const PHOTO_LIMIT = 6;
 
@@ -68,8 +69,8 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
       >
         <ArrowLeft className="size-4" aria-hidden /> Nearby
       </Link>
-      <div className="mt-2 grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14">
-        <section className="lg:sticky lg:top-[84px] lg:self-start">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14">
+        <section className="min-w-0 lg:sticky lg:top-[84px] lg:self-start">
           <div className="flex flex-wrap items-center gap-2">
             {open ? (
               <Badge tone="accent" size="md">
@@ -78,7 +79,7 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
             ) : r.status === "expired" ? (
               <Badge tone="warn" size="md">Closed early</Badge>
             ) : (
-              <Badge size="md">Closed {clockTime(r.closes_at)}</Badge>
+              <Badge size="md">Closed {clockTime(r.closed_at ?? r.closes_at)}</Badge>
             )}
             <Badge size="md">
               <MapPin className="size-3.5" aria-hidden /> {r.place_label ?? "Pinned spot"}
@@ -250,7 +251,7 @@ function Prize({ r }: { r: QuestionResults }) {
 
   const prize = `${r.raffle.prize_amount} ${r.raffle.currency}`;
   return (
-    <div id="raffle" className="mt-8 grid scroll-mt-24 gap-3">
+    <div id="raffle" className="mt-8 grid scroll-mt-24 grid-cols-[minmax(0,1fr)] gap-3">
       <Card className={cn("flex items-start gap-3.5 p-5", settled && r.raffle.winner_observer && "bg-accent-soft ring-transparent")}>
         <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-accent to-accent-2 text-white">
           <Trophy className="size-5" aria-hidden />
@@ -327,7 +328,7 @@ function Prize({ r }: { r: QuestionResults }) {
   );
 }
 
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+const fmt = formatAmount;
 
 function Sealed({ r, onPeekHelp }: { r: QuestionResults; onPeekHelp: () => void }) {
   return (
@@ -509,7 +510,7 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
     submissionIds: r.evidence.map((e) => e.id),
   });
   return (
-    <details className="group mt-4 rounded-[16px] bg-surface-2 p-4 open:pb-3">
+    <details className="group mt-4 min-w-0 max-w-full rounded-[16px] bg-surface-2 p-4 open:pb-3">
       <summary className="cursor-pointer list-none rounded-[8px] text-[14px] font-semibold marker:hidden focus-visible:outline-2 focus-visible:outline-accent">
         Verify it yourself <span className="font-normal text-muted group-open:hidden">· show the code</span>
       </summary>
@@ -517,11 +518,11 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
         Paste this into a browser console or <code className="font-mono">node</code>. It hashes the revealed seed, the block hash and the
         question id, then picks from the sorted submission ids, exactly like the server did.
       </p>
-      <div className="relative mt-3">
+      <div className="relative mt-3 min-w-0 max-w-full [contain:inline-size]">
         <pre
           tabIndex={0}
           aria-label="Raffle verification code"
-          className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed focus-visible:outline-2 focus-visible:outline-accent"
+          className="max-h-[320px] max-w-full overflow-auto whitespace-pre rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed focus-visible:outline-2 focus-visible:outline-accent"
         >
           <code>{code}</code>
         </pre>
@@ -580,7 +581,7 @@ function XrplRows({ pot }: { pot: NonNullable<QuestionResults["raffle"]["xrpl"]>
 
 function Row({ label, value, href, plain }: { label: string; value: string; href?: string; plain?: boolean }) {
   return (
-    <div className="grid grid-cols-[96px_1fr_auto] items-center gap-3">
+    <div className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-3">
       <dt className="font-sans text-[13px] text-muted">{label}</dt>
       <dd className={cn("truncate", plain && "font-sans text-[13px] text-muted")} title={value}>
         {href ? (

@@ -5,11 +5,12 @@ import { ArrowUpRight, Coins, Eye, Hourglass, Trophy, Undo2 } from "lucide-react
 import type { AusdFlow } from "@a-eye/shared";
 import { ago } from "@/lib/time";
 import { cn } from "@/lib/cn";
+import { formatAmount } from "@/lib/money";
 
 export type MoneyFlow = Omit<AusdFlow, "url"> & { url?: string; question_id?: string; prompt?: string };
 
 const basescan = (tx: string) => `https://sepolia.basescan.org/tx/${tx}`;
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000));
+const fmt = formatAmount;
 const who = (label: string) => (label === "agent" ? "the agent" : label.startsWith("agent ") ? `agent ${label.slice(6)}` : label);
 
 const STEP: Record<AusdFlow["kind"], { icon: typeof Coins; title: string; tone: "in" | "out" }> = {
