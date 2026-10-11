@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, Trophy } from "@phosphor-icons/react";
 import { ago } from "@/lib/time";
+import type { ObserverStats } from "@/lib/reputation";
+import { BadgeGrid, pct } from "./badges";
 
 type Observer = { id: string; display_name: string; evm_address?: string };
 type Entry = {
@@ -18,7 +20,7 @@ type Entry = {
 };
 
 export function MeView() {
-  const [me, setMe] = useState<{ observer: Observer; entries: Entry[] } | null>(null);
+  const [me, setMe] = useState<{ observer: Observer; entries: Entry[]; stats: ObserverStats } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState("");
   const [wallet, setWallet] = useState("");
@@ -54,21 +56,61 @@ export function MeView() {
 
   return (
     <main className="mx-auto grid max-w-[1100px] gap-12 px-4 pb-24 pt-8 md:grid-cols-[5fr_7fr] md:px-6 md:pt-12">
-      <section>
-        <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Your observer profile</h1>
-        <p className="mt-2 max-w-[44ch] text-[15px] leading-relaxed text-muted">
-          For now your identity is this browser. Raffle winnings go to the wallet below.
-        </p>
+      <section className="md:col-span-2">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Your observer profile</h1>
+            <p className="mt-2 max-w-[44ch] text-[15px] leading-relaxed text-muted">
+              For now your identity is this browser. Raffle winnings go to the wallet below.
+            </p>
+          </div>
+          <Link href="/leaderboard" className="btn btn-ghost">
+            Leaderboard <ArrowRight size={16} weight="bold" />
+          </Link>
+        </div>
+        {me ? (
+          <>
+            <dl className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              <Stat label="Verified answers" value={me.stats.verified_answers} />
+              <Stat label="Questions won" value={me.stats.questions_won} />
+              <Stat label="AUSD earned" value={me.stats.ausd_earned} />
+              <Stat
+                label="Day streak"
+                value={me.stats.current_streak}
+                hint={me.stats.best_streak > me.stats.current_streak ? `Best ${me.stats.best_streak}` : undefined}
+              />
+              <Stat
+                label="Agreement"
+                value={pct(me.stats.agreement_rate)}
+                hint={
+                  me.stats.agreement_scored > 0
+                    ? `${me.stats.agreement_agreed} of ${me.stats.agreement_scored} closed`
+                    : "After a question closes"
+                }
+                wide
+              />
+            </dl>
+            <h2 className="mt-8 text-[15px] font-semibold tracking-tight">Badges</h2>
+            <div className="mt-3">
+              <BadgeGrid badges={me.stats.badges} />
+            </div>
+          </>
+        ) : (
+          !loadError && <div className="mt-8 h-24 animate-pulse rounded-[16px] bg-surface-2" aria-hidden />
+        )}
+      </section>
 
+      <section>
+        <h2 className="text-xl font-semibold tracking-tight">Profile</h2>
         {loadError ? (
-          <p className="mt-8 text-[14px] text-bad">Couldn&apos;t load your profile. Refresh to try again.</p>
+          <p className="mt-5 text-[14px] text-bad">Couldn&apos;t load your profile. Refresh to try again.</p>
         ) : !me ? (
-          <div className="mt-8 space-y-4" aria-label="Loading profile">
+          <div className="mt-5 space-y-4" aria-label="Loading profile">
             <div className="h-11 animate-pulse rounded-[12px] bg-surface-2" />
             <div className="h-11 animate-pulse rounded-[12px] bg-surface-2" />
           </div>
         ) : (
-          <form onSubmit={save} className="mt-8 grid gap-5">
+          <form onSubmit={save} className="mt-5 grid gap-5">
             <div className="grid gap-2">
               <label htmlFor="name" className="text-[14px] font-medium">
                 Display name
@@ -143,5 +185,15 @@ export function MeView() {
         )}
       </section>
     </main>
+  );
+}
+
+function Stat({ label, value, hint, wide }: { label: string; value: number | string; hint?: string; wide?: boolean }) {
+  return (
+    <div className={`rounded-[16px] bg-surface p-4 ring-1 ring-line ${wide ? "col-span-2 sm:col-span-1" : ""}`}>
+      <dt className="text-[13px] text-muted">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</dd>
+      {hint && <dd className="mt-0.5 text-[12px] text-muted">{hint}</dd>}
+    </div>
   );
 }
