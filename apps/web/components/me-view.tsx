@@ -614,7 +614,7 @@ export function MeView() {
           />
           <Stat icon={<Coins className="size-4" aria-hidden />} label={
               <>
-                Test dollars earned <TestMoney className="ml-auto" align="end" />
+                Earned <TestMoney className="ml-auto" align="end" />
               </>
             } value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
           <Stat
@@ -630,7 +630,9 @@ export function MeView() {
           />
         </dl>
 
-        {me && !me.observer.evm_address && (
+        {me &&
+          !me.observer.evm_address &&
+          !prizes.some((prize) => prize.status === "needs_wallet") && (
           <a
             href="#pay"
             className="mt-4 flex min-h-14 items-center gap-3 rounded-[18px] bg-accent-soft px-4 py-3 text-accent-ink transition-transform active:scale-[0.985]"
