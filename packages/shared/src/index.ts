@@ -5,6 +5,22 @@ import { z } from "zod";
 export const QuestionStatus = z.enum(["open", "closed", "settled", "expired"]);
 export type QuestionStatus = z.infer<typeof QuestionStatus>;
 
+/**
+ * Optional provenance for a question that is tied to a prediction-market
+ * contract (e.g. Gemini Predictions). Loose record so extra keys survive.
+ */
+export const MarketRef = z
+  .object({
+    provider: z.string(),
+    env: z.enum(["sandbox", "production"]).optional(),
+    event_ticker: z.string().optional(),
+    contract_symbol: z.string().optional(),
+    label: z.string().optional(),
+    implied_yes: z.number().min(0).max(1).nullable().optional(),
+  })
+  .loose();
+export type MarketRef = z.infer<typeof MarketRef>;
+
 export const CreateQuestionInput = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -17,6 +33,7 @@ export const CreateQuestionInput = z.object({
   min_responses: z.number().int().min(1).max(100).default(3),
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),
+  market_ref: MarketRef.optional(),
 });
 export type CreateQuestionInput = z.infer<typeof CreateQuestionInput>;
 
