@@ -7,6 +7,7 @@ import { GET as getMine } from "@/app/api/questions/mine/route";
 import { GET as getQuestions, POST as postQuestion } from "@/app/api/questions/route";
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
+const FORWARDED_HEADERS = ["host", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-for", "x-real-ip"] as const;
 
 export function createInProcessFetch(publicOrigin: string, incoming: Headers): FetchLike {
   const expectedOrigin = new URL(publicOrigin).origin;
@@ -16,7 +17,11 @@ export function createInProcessFetch(publicOrigin: string, incoming: Headers): F
     if (url.origin !== expectedOrigin) return globalThis.fetch(input, init);
 
     const method = (init?.method ?? "GET").toUpperCase();
-    const headers = new Headers(incoming);
+    const headers = new Headers();
+    for (const name of FORWARDED_HEADERS) {
+      const value = incoming.get(name);
+      if (value !== null) headers.set(name, value);
+    }
     new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
     const body = method === "GET" || method === "HEAD" ? undefined : init?.body;
     const req = new Request(url, { ...init, method, headers, body });
