@@ -1,18 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { decodeMPTokenMetadata } from "xrpl";
+import type { Client, Payment, TxResponse } from "xrpl";
 import {
   CREDENTIAL_TYPE_HEX,
   RLUSD_TESTNET,
   XrplError,
+  buildBatch,
   buildCredentialAccept,
   buildCredentialCreate,
   buildEscrowCancel,
   buildEscrowCreate,
   buildEscrowFinish,
+  buildMptAuthorize,
+  buildObserverOnboardingBatch,
+  buildReputationIssuanceCreate,
+  buildRlusdAmmPayment,
   buildRlusdPayment,
   buildTrustSet,
   credentialCreateOutcome,
   explorerTx,
   hasRlusdTrustLine,
+  submitBatch,
   unixTimestampToRippleTime,
 } from "./xrpl.js";
 
@@ -83,6 +91,130 @@ describe("XRPL builders", () => {
     expect(() => buildRlusdPayment(TREASURY, SUBJECT, "1.0000001")).toThrow(/invalid_amount/);
     expect(() => buildRlusdPayment(TREASURY, SUBJECT, "1234567890123456")).toThrow(/invalid_amount/);
     expect(() => buildEscrowFinish(TREASURY, TREASURY, -1)).toThrow(/invalid_sequence/);
+  });
+});
+
+describe("XRPL Batch and MPT builders", () => {
+  const INNER_FLAG = 0x40000000; // GlobalFlags.tfInnerBatchTxn
+
+  const innerPayment = (account: string): Payment => ({
+    TransactionType: "Payment",
+    Account: account,
+    Destination: SUBJECT,
+    Amount: "1000",
+  });
+
+  it("sets tfInnerBatchTxn on every inner and the right mode flag", () => {
+    const batch = buildBatch(TREASURY, [innerPayment(TREASURY), innerPayment(TREASURY)], "allOrNothing");
+    expect(batch.Flags).toBe(65536); // BatchFlags.tfAllOrNothing
+    expect(batch.RawTransactions).toHaveLength(2);
+    for (const raw of batch.RawTransactions) {
+      expect(Number(raw.RawTransaction.Flags) & INNER_FLAG).toBe(INNER_FLAG);
+    }
+    const independent = buildBatch(TREASURY, [innerPayment(TREASURY), innerPayment(TREASURY)], "independent");
+    expect(independent.Flags).toBe(524288); // BatchFlags.tfIndependent
+  });
+
+  it("preserves existing inner flags and rejects bad batches", () => {
+    const flagged = { ...innerPayment(TREASURY), Flags: 131072 };
+    const batch = buildBatch(TREASURY, [flagged, innerPayment(TREASURY)], "allOrNothing");
+    expect(Number(batch.RawTransactions[0]!.RawTransaction.Flags)).toBe(131072 | INNER_FLAG);
+    expect(() => buildBatch(TREASURY, [innerPayment(TREASURY)], "allOrNothing")).toThrow(/invalid_batch/);
+    expect(() =>
+      buildBatch(TREASURY, Array.from({ length: 9 }, () => innerPayment(TREASURY)), "allOrNothing"),
+    ).toThrow(/invalid_batch/);
+    expect(() => buildBatch(TREASURY, [innerPayment(TREASURY), innerPayment(SUBJECT)], "allOrNothing")).toThrow(
+      /invalid_batch/,
+    );
+  });
+
+  it("builds an RLUSD AMM payment with SendMax in drops and no partial-payment flag", () => {
+    expect(buildRlusdAmmPayment(TREASURY, SUBJECT, "0.9", "18000000")).toEqual({
+      TransactionType: "Payment",
+      Account: TREASURY,
+      Destination: SUBJECT,
+      Amount: { currency: RLUSD_TESTNET.currency, issuer: RLUSD_TESTNET.issuer, value: "0.9" },
+      SendMax: "18000000",
+    });
+    expect(() => buildRlusdAmmPayment(TREASURY, SUBJECT, "0.9", "0")).toThrow(/invalid_amount/);
+  });
+
+  it("builds the observer onboarding batch, or a bare TrustSet without an issuance", () => {
+    const issuance = "000004C463C52827307480341125DA0577DEFC38405B0E3E";
+    const batch = buildObserverOnboardingBatch(SUBJECT, issuance);
+    expect(batch.TransactionType).toBe("Batch");
+    if (batch.TransactionType !== "Batch") return;
+    expect(batch.RawTransactions.map((r) => r.RawTransaction.TransactionType)).toEqual([
+      "TrustSet",
+      "MPTokenAuthorize",
+    ]);
+    expect(buildObserverOnboardingBatch(SUBJECT)).toMatchObject({ TransactionType: "TrustSet" });
+    expect(buildMptAuthorize(SUBJECT, issuance)).toMatchObject({
+      TransactionType: "MPTokenAuthorize",
+      MPTokenIssuanceID: issuance,
+    });
+  });
+
+  it("issues a non-transferable AEYE reputation MPT with XLS-89 metadata", () => {
+    const create = buildReputationIssuanceCreate(TREASURY);
+    expect(create.TransactionType).toBe("MPTokenIssuanceCreate");
+    expect(create.AssetScale).toBe(0);
+    expect(Number(create.Flags ?? 0) & 32).toBe(0); // no tfMPTCanTransfer
+    expect(decodeMPTokenMetadata(create.MPTokenMetadata!)).toMatchObject({
+      ticker: "AEYE",
+      name: "A-eye Verified Answers",
+      asset_class: "other",
+      issuer_name: "A-eye",
+    });
+  });
+});
+
+describe("submitBatch", () => {
+  const signedInner = (account: string) => ({
+    TransactionType: "Payment" as const,
+    Account: account,
+    Destination: SUBJECT,
+    Amount: "1000",
+    Fee: "0",
+    Sequence: 1,
+    SigningPubKey: "",
+    Flags: 0x40000000,
+  });
+
+  const batchResponse = (inner: unknown[]): TxResponse =>
+    ({
+      result: {
+        hash: "A".repeat(64),
+        ledger_index: 42,
+        meta: { TransactionResult: "tesSUCCESS" },
+        tx_json: { TransactionType: "Batch", RawTransactions: inner.map((t) => ({ RawTransaction: t })) },
+      },
+    }) as unknown as TxResponse;
+
+  it("reports each inner transaction's real result", async () => {
+    const inners = [signedInner(TREASURY), signedInner(TREASURY)];
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ result: { meta: { TransactionResult: "tesSUCCESS" } } })
+      .mockResolvedValueOnce({ result: { meta: { TransactionResult: "tecNO_AUTH" } } });
+    const client = {
+      submitAndWait: vi.fn().mockResolvedValue(batchResponse(inners)),
+      request,
+    } as unknown as Client;
+    const batch = buildBatch(TREASURY, inners.map((t) => ({ ...t })), "allOrNothing");
+    const result = await submitBatch(client, {} as never, batch);
+    expect(result.inner).toHaveLength(2);
+    expect(result.inner[0]!.result).toBe("tesSUCCESS");
+    expect(result.inner[1]!.result).toBe("tecNO_AUTH");
+    expect(result.inner[0]!.hash).toMatch(/^[0-9A-F]{64}$/);
+  });
+
+  it("maps an outer tem* failure to batch_unavailable", async () => {
+    const client = {
+      submitAndWait: vi.fn().mockRejectedValue({ data: { engine_result: "temDISABLED" } }),
+    } as unknown as Client;
+    const batch = buildBatch(TREASURY, [signedInner(TREASURY), signedInner(TREASURY)], "allOrNothing");
+    await expect(submitBatch(client, {} as never, batch)).rejects.toThrow(/batch_unavailable:temDISABLED/);
   });
 });
 

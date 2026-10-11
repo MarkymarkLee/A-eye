@@ -11,8 +11,18 @@ const xrpl = vi.hoisted(() => ({
   cancelEscrow: vi.fn(),
   payoutXrp: vi.fn(),
   issueObserverCredential: vi.fn(),
+  settlePotBatch: vi.fn(),
+  payoutRlusdViaAmm: vi.fn(),
+  accountHasRlusdTrustLine: vi.fn(),
+  potXrpForUsdQuoted: vi.fn(),
+  feeDestination: vi.fn(),
+  ensureReputationIssuance: vi.fn(),
+  observerLedgerStatus: vi.fn(),
+  mintReputation: vi.fn(),
+  issuerAddress: vi.fn(),
 }));
 vi.mock("./xrpl", async (orig) => ({ ...(await orig<typeof import("./xrpl")>()), ...xrpl }));
+const { XrplError } = await import("./xrpl");
 const transferAusd = vi.fn();
 vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd }));
 
@@ -27,6 +37,8 @@ const store = await import("./store");
 
 const OWNER = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
 const WINNER = "rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH";
+const PLATFORM = "rBithL3yEXVKgG8wS2XuLJxQa2c2C7jGvM";
+const ISSUANCE = "000004C463C52827307480341125DA0577DEFC38405B0E3E";
 const hash = (c: string) => c.repeat(64);
 const ORIGIN = "http://a-eye.test";
 
@@ -102,6 +114,29 @@ describe("XRPL wiring with testnet wallets configured", () => {
     xrpl.cancelEscrow.mockResolvedValue({ hash: hash("c") });
     xrpl.payoutXrp.mockResolvedValue({ hash: hash("p") });
     xrpl.issueObserverCredential.mockResolvedValue({ hash: hash("a"), explorer_url: "x", ledger_index: 1, already_issued: false });
+    xrpl.potXrpForUsdQuoted.mockImplementation(async (usd: number) => String(usd));
+    xrpl.feeDestination.mockReturnValue(PLATFORM);
+    xrpl.issuerAddress.mockReturnValue(PLATFORM);
+    xrpl.settlePotBatch.mockResolvedValue({
+      batch: { hash: hash("b"), explorer_url: "", ledger_index: 1 },
+      finish: { hash: hash("f"), explorer_url: "" },
+      payout: { hash: hash("p"), explorer_url: "" },
+      fee: { hash: hash("d"), explorer_url: "" },
+      payout_currency: "RLUSD",
+      payout_amount: "0.9",
+    });
+    xrpl.payoutRlusdViaAmm.mockResolvedValue({ hash: hash("r") });
+    xrpl.accountHasRlusdTrustLine.mockResolvedValue(false);
+    xrpl.ensureReputationIssuance.mockResolvedValue(ISSUANCE);
+    xrpl.observerLedgerStatus.mockResolvedValue({
+      funded: true,
+      xrp_balance: "10",
+      rlusd: { trustline: true, balance: "0" },
+      reputation: { opted_in: false },
+    });
+    xrpl.mintReputation.mockImplementation(async (_id: string, grants: { address: string; amount: number }[]) =>
+      grants.map((g) => ({ ...g, hash: hash("m"), result: "tesSUCCESS" })),
+    );
   });
 
   it("migrates observers and stores the payout rail and XRPL address", () => {
@@ -113,13 +148,14 @@ describe("XRPL wiring with testnet wallets configured", () => {
     });
   });
 
-  it("escrows the winner payout at creation, then EscrowFinish + XRP payout to an XRPL-rail winner", async () => {
+  it("escrows the gross prize at creation, then settles an XRPL-rail winner in one Batch", async () => {
     const id = ask();
     expect(await store.escrowQuestionPot(id)).toBe(hash("e"));
     expect(await store.escrowQuestionPot(id)).toBe(hash("e"));
     expect(xrpl.createPotEscrow).toHaveBeenCalledTimes(1);
     const [amount, finishAfter, opts] = xrpl.createPotEscrow.mock.calls[0]!;
-    expect(amount).toBe("0.9");
+    // Gross prize (1 USD), not the net 0.9; the fee is split out at settle time.
+    expect(amount).toBe("1");
     expect(opts.cancelAfter.getTime()).toBeGreaterThan(finishAfter.getTime());
 
     const obs = store.getOrCreateObserver(undefined);
@@ -127,11 +163,62 @@ describe("XRPL wiring with testnet wallets configured", () => {
     await answer(id, obs.id);
     advance(20_000);
     await store.closeNow(id);
-    expect(xrpl.finishEscrow).toHaveBeenCalledWith({ owner: OWNER, offerSequence: 100 });
-    expect(xrpl.payoutXrp).toHaveBeenCalledWith(WINNER, "900000");
+    expect(xrpl.settlePotBatch).toHaveBeenCalledWith({
+      owner: OWNER,
+      offerSequence: 100,
+      winner: WINNER,
+      rlusdValue: "0.9",
+      feeDrops: 100000,
+      feeDestination: PLATFORM,
+    });
+    expect(xrpl.finishEscrow).not.toHaveBeenCalled();
+    expect(xrpl.payoutXrp).not.toHaveBeenCalled();
     const pot = (await store.getResults(id, ORIGIN))!.raffle.xrpl!;
-    expect(pot).toMatchObject({ state: "finished", amount_xrp: "0.9", escrow_tx: hash("e"), finish_tx: hash("f"), payout_tx: hash("p") });
-    expect(pot.payout_url).toBe(`https://testnet.xrpl.org/transactions/${hash("p")}`);
+    expect(pot).toMatchObject({
+      state: "finished",
+      amount_xrp: "1",
+      escrow_tx: hash("e"),
+      batch_tx: hash("b"),
+      finish_tx: hash("f"),
+      payout_tx: hash("p"),
+      fee_tx: hash("d"),
+      settle_mode: "batch",
+      payout_currency: "RLUSD",
+      payout_amount: "0.9",
+      fee_xrp: "0.1",
+    });
+    expect(pot.batch_url).toBe(`https://testnet.xrpl.org/transactions/${hash("b")}`);
+    // The winner's entry shows the RLUSD payout.
+    expect(store.observerEntries(obs.id).find((e) => e.question_id === id)).toMatchObject({
+      won: true,
+      prize: 0.9,
+      currency: "RLUSD",
+    });
+  });
+
+  it("falls back to sequential settlement when Batch is unavailable", async () => {
+    const id = ask();
+    await store.escrowQuestionPot(id);
+    const obs = store.getOrCreateObserver(undefined);
+    store.updateObserver(obs.id, { xrpl_address: WINNER, payout_rail: "xrpl" });
+    await answer(id, obs.id);
+    advance(20_000);
+    xrpl.settlePotBatch.mockRejectedValue(new XrplError("batch_unavailable:temDISABLED"));
+    await store.closeNow(id);
+    expect(xrpl.settlePotBatch).toHaveBeenCalledTimes(1);
+    expect(xrpl.finishEscrow).toHaveBeenCalledWith({ owner: OWNER, offerSequence: 100 });
+    // No RLUSD trust line -> XRP payout of pot minus fee, plus a fee payment.
+    expect(xrpl.payoutXrp).toHaveBeenCalledWith(WINNER, "900000");
+    expect(xrpl.payoutXrp).toHaveBeenCalledWith(PLATFORM, "100000");
+    const pot = (await store.getResults(id, ORIGIN))!.raffle.xrpl!;
+    expect(pot).toMatchObject({
+      state: "finished",
+      settle_mode: "sequential",
+      payout_currency: "XRP",
+      payout_amount: "0.9",
+      fee_tx: hash("p"),
+    });
+    expect(pot.batch_tx).toBeUndefined();
   });
 
   it("releases the escrow to the treasury when the winner is on the EVM rail", async () => {
@@ -154,8 +241,10 @@ describe("XRPL wiring with testnet wallets configured", () => {
     await answer(id, obs.id);
     await store.closeNow(id);
     expect(xrpl.finishEscrow).not.toHaveBeenCalled();
+    expect(xrpl.settlePotBatch).not.toHaveBeenCalled();
 
     advance(20_000);
+    xrpl.settlePotBatch.mockRejectedValue(new XrplError("batch_unavailable:temDISABLED"));
     xrpl.payoutXrp.mockRejectedValueOnce(new Error("tecUNFUNDED_PAYMENT"));
     await store.settleXrplPot(id);
     expect((await store.getResults(id, ORIGIN))!.raffle.xrpl).toMatchObject({ state: "escrowed", finish_tx: hash("f") });
@@ -166,8 +255,47 @@ describe("XRPL wiring with testnet wallets configured", () => {
     advance(30_000);
     await store.settleXrplPot(id);
     expect(xrpl.finishEscrow).toHaveBeenCalledTimes(1);
-    expect(xrpl.payoutXrp).toHaveBeenCalledTimes(2);
-    expect((await store.getResults(id, ORIGIN))!.raffle.xrpl).toMatchObject({ state: "finished", payout_tx: hash("p") });
+    // Winner payout + fee payment.
+    expect(xrpl.payoutXrp).toHaveBeenCalledTimes(3);
+    expect(xrpl.payoutXrp).toHaveBeenLastCalledWith(PLATFORM, "100000");
+    expect((await store.getResults(id, ORIGIN))!.raffle.xrpl).toMatchObject({
+      state: "finished",
+      payout_tx: hash("p"),
+      settle_mode: "sequential",
+    });
+  });
+
+  it("mints reputation MPT only for opted-in observers and only the delta", async () => {
+    const obs = store.getOrCreateObserver(undefined);
+    store.updateObserver(obs.id, { xrpl_address: WINNER, payout_rail: "xrpl" });
+    const other = store.getOrCreateObserver(undefined);
+    store.updateObserver(other.id, { xrpl_address: PLATFORM, payout_rail: "xrpl" });
+    for (let i = 0; i < 2; i++) await answer(ask({ xrpl_escrow: false }), obs.id);
+    await answer(ask({ xrpl_escrow: false }), other.id);
+
+    xrpl.observerLedgerStatus.mockImplementation(async (address: string) => ({
+      funded: true,
+      rlusd: { trustline: false },
+      reputation: { opted_in: address === WINNER, balance: "0" },
+    }));
+    await store.syncObserverReputation([obs.id, other.id]);
+    expect(xrpl.mintReputation).toHaveBeenCalledTimes(1);
+    expect(xrpl.mintReputation.mock.calls[0]![1]).toEqual([{ address: WINNER, amount: 2 }]);
+    expect((await store.observerXrpl(obs.id)).reputation).toMatchObject({
+      issuance_id: ISSUANCE,
+      opted_in: true,
+      earned: 2,
+      minted: 2,
+    });
+
+    // A second sync mints nothing new; a third accepted answer mints just the delta.
+    await store.syncObserverReputation([obs.id]);
+    expect(xrpl.mintReputation).toHaveBeenCalledTimes(1);
+    await answer(ask({ xrpl_escrow: false }), obs.id);
+    await store.syncObserverReputation([obs.id]);
+    expect(xrpl.mintReputation).toHaveBeenCalledTimes(2);
+    expect(xrpl.mintReputation.mock.calls[1]![1]).toEqual([{ address: WINNER, amount: 1 }]);
+    expect((await store.observerXrpl(obs.id)).reputation.minted).toBe(3);
   });
 
   it("cancels (refunds) the escrow once an expired question passes CancelAfter", async () => {
