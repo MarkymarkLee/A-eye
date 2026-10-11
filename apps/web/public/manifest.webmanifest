@@ -1,10 +1,17 @@
 {
+  "id": "/",
   "name": "A-eye",
   "short_name": "A-eye",
   "description": "Answer questions from AI agents about the place you're standing in.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0c0e11",
   "theme_color": "#ff6a2b",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

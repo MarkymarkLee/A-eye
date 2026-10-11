@@ -148,6 +148,18 @@ create table if not exists raffles (
   winner_submission_id text,
   payout_tx text
 );
+create table if not exists push_subscriptions (
+  endpoint text primary key,
+  observer_id text not null references observers(id),
+  p256dh text not null,
+  auth text not null,
+  lat real,
+  lng real,
+  location_at text,
+  last_push_at text,
+  created_at text not null
+);
+create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat, lng);
 `;
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
@@ -486,6 +498,74 @@ export async function addSubmission(input: {
 export function getQuestionRow(id: string) {
   const q = questionById(id);
   return q ? { id: q.id, lat: q.lat, lng: q.lng, radius_m: q.radius_m } : undefined;
+}
+
+// ---------- push subscriptions ----------
+
+export type PushSubscriptionRecord = {
+  endpoint: string;
+  observer_id: string;
+  p256dh: string;
+  auth: string;
+  lat: number | null;
+  lng: number | null;
+  location_at: string | null;
+  last_push_at: string | null;
+  created_at: string;
+};
+
+/** Upsert on endpoint. A new lat/lng is stored rounded to 3 decimals (~110 m); omitting it keeps the old fix. */
+export function savePushSubscription(input: {
+  observerId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  lat?: number;
+  lng?: number;
+}): PushSubscriptionRecord {
+  const now = new Date().toISOString();
+  const hasLoc = input.lat !== undefined && input.lng !== undefined;
+  const lat = hasLoc ? Math.round(input.lat! * 1000) / 1000 : null;
+  const lng = hasLoc ? Math.round(input.lng! * 1000) / 1000 : null;
+  db()
+    .prepare(
+      `insert into push_subscriptions (endpoint, observer_id, p256dh, auth, lat, lng, location_at, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict(endpoint) do update set
+         observer_id = excluded.observer_id,
+         p256dh = excluded.p256dh,
+         auth = excluded.auth,
+         lat = coalesce(excluded.lat, push_subscriptions.lat),
+         lng = coalesce(excluded.lng, push_subscriptions.lng),
+         location_at = coalesce(excluded.location_at, push_subscriptions.location_at)`,
+    )
+    .run(input.endpoint, input.observerId, input.p256dh, input.auth, lat, lng, hasLoc ? now : null, now);
+  return db().prepare("select * from push_subscriptions where endpoint = ?").get(input.endpoint) as PushSubscriptionRecord;
+}
+
+export function deletePushSubscription(endpoint: string): boolean {
+  return db().prepare("delete from push_subscriptions where endpoint = ?").run(endpoint).changes === 1;
+}
+
+/** SQL bounding-box prefilter (same math as nearbyQuestions); exact distance filtering is selectPushTargets. */
+export function pushSubscriptionsNear(lat: number, lng: number, radiusM: number): PushSubscriptionRecord[] {
+  const dLat = radiusM / 1000 / 111.32;
+  const dLng = radiusM / 1000 / (111.32 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  return db()
+    .prepare(
+      "select * from push_subscriptions where lat is not null and lat between ? and ? and lng between ? and ?",
+    )
+    .all(lat - dLat, lat + dLat, lng - dLng, lng + dLng) as PushSubscriptionRecord[];
+}
+
+/** Rate limit + no double send: one atomic UPDATE claims the slot for `now`. */
+export function claimPushSlot(endpoint: string, nowMs: number, minIntervalMs: number): boolean {
+  const res = db()
+    .prepare(
+      "update push_subscriptions set last_push_at = ? where endpoint = ? and (last_push_at is null or last_push_at <= ?)",
+    )
+    .run(new Date(nowMs).toISOString(), endpoint, new Date(nowMs - minIntervalMs).toISOString());
+  return res.changes === 1;
 }
 
 // ---------- settle ----------
