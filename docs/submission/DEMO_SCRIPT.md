@@ -51,7 +51,7 @@ If the live question has not closed by 1:50, the Driver switches to tab 3 (`/q/5
 - AUSD winner payout: https://sepolia.basescan.org/tx/0x88f3a82b840fcb29c744d99bb8a97e6c22f444a35b05c146c753b0fcdaf86376
 - AUSD refund: https://sepolia.basescan.org/tx/0x066fe59b98130c690bb144543625344dae3f930a822f8802ea359d5263006429
 - XRPL Batch settlement: https://testnet.xrpl.org/transactions/F145294E73889FD677795FE68A47D6414EE94CE41D0ABDFCB6DBF98C047BF56B
-- Gemini sandbox order `145853902277410438`: `GEMI-SOL2610112200-HI109`, 4 YES @ $0.47, filled (sample output in the README)
+- Gemini sandbox order `145853902277410438`: `GEMI-SOL2610112200-HI109`, 4 YES @ $0.47, filled (sample output in [docs/gemini.md](../gemini.md))
 - XRPL Devnet vault withdraw: https://devnet.xrpl.org/transactions/6A29B0735D21EF8E01EE33761929285EA5608150B5B671F86C1653E6B85B220E
 
 ## Fallbacks
