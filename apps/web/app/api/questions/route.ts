@@ -13,18 +13,12 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const hasLat = url.searchParams.has("lat");
   const hasLng = url.searchParams.has("lng");
+  const hasMaxKm = url.searchParams.has("max_km");
   const latValue = url.searchParams.get("lat");
   const lngValue = url.searchParams.get("lng");
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
-  const maxKmValue = url.searchParams.get("max_km");
-  const requestedMaxKm = Number(maxKmValue ?? 5);
-  const maxKm =
-    (maxKmValue === null || maxKmValue.trim() !== "") &&
-    Number.isFinite(requestedMaxKm) &&
-    requestedMaxKm >= 0
-      ? Math.min(50, Math.max(0.1, requestedMaxKm))
-      : 5;
+  const requestedMaxKm = Number(url.searchParams.get("max_km"));
   if (
     hasLat &&
     (!hasLng ||
@@ -39,8 +33,11 @@ export async function GET(req: Request) {
   ) {
     return NextResponse.json({ error: "lat and lng must both be valid coordinates" }, { status: 400 });
   }
+  if (hasMaxKm && (!Number.isFinite(requestedMaxKm) || requestedMaxKm <= 0)) {
+    return NextResponse.json({ error: "max_km must be a positive number" }, { status: 400 });
+  }
   if (hasLat) {
-    return NextResponse.json({ questions: await nearbyQuestions(lat, lng, maxKm) });
+    return NextResponse.json({ questions: await nearbyQuestions(lat, lng, Math.min(hasMaxKm ? requestedMaxKm : 5, 50)) });
   }
   return NextResponse.json({ questions: await allOpenQuestions() });
 }
