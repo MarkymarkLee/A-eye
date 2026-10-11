@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { PayoutRail } from "@a-eye/shared";
 import { currentObserver } from "@/lib/observer";
-import { maybeIssueObserverCredential, observerCredential, observerEntries, updateObserver } from "@/lib/store";
+import { maybeIssueObserverCredential, observerCredential, observerEntries, observerStats, updateObserver } from "@/lib/store";
 import { isClassicAddress } from "@/lib/xrpl";
 
 const Patch = z
@@ -25,7 +25,12 @@ const Patch = z
 
 export async function GET() {
   const obs = await currentObserver();
-  return NextResponse.json({ observer: obs, entries: observerEntries(obs.id), xrpl: observerCredential(obs.id) });
+  return NextResponse.json({
+    observer: obs,
+    entries: observerEntries(obs.id),
+    stats: await observerStats(obs.id),
+    xrpl: observerCredential(obs.id),
+  });
 }
 
 export async function PUT(req: Request) {
