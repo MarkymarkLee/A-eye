@@ -1,11 +1,12 @@
 import "server-only";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   PLATFORM_FEE,
   type CreateQuestionInput,
+  type AusdFlow,
   type PayoutRail,
   type Evidence,
   type MarketRef,
@@ -17,7 +18,14 @@ import {
 } from "@a-eye/shared";
 import { distanceM } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
-import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
+import {
+  peekPaywallActive,
+  peekPriceUnits,
+  prizeUnits,
+  questionPayTo,
+  sendFromTreasury,
+  winnerPayoutUnits,
+} from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
 import {
@@ -198,6 +206,16 @@ create table if not exists raffles (
   winner_submission_id text,
   payout_tx text
 );
+create table if not exists peeks (
+  id text primary key,
+  question_id text not null references questions(id),
+  payer_address text,
+  amount real not null,
+  payment_tx text,
+  responses_at_peek integer not null,
+  created_at text not null
+);
+create index if not exists peeks_question_idx on peeks(question_id);
 create table if not exists xrpl_escrows (
   question_id text primary key references questions(id),
   owner text not null,
@@ -238,6 +256,16 @@ create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat,
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
+export function applyPendingRestore(file: string): boolean {
+  if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
+  if (existsSync(file)) renameSync(file, `${file}.pre-restore-${Date.now()}`);
+  rmSync(`${file}-wal`, { force: true });
+  rmSync(`${file}-shm`, { force: true });
+  renameSync(`${file}.restore`, file);
+  console.info("[db] restored database from", `${file}.restore`);
+  return true;
+}
+
 /** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
 function migrate(conn: DatabaseSync) {
   const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
@@ -252,10 +280,13 @@ function migrate(conn: DatabaseSync) {
 
 export function db(): DatabaseSync {
   if (!g.__aeyeDb) {
-    const file = process.env.A_EYE_DB_PATH ?? path.join(process.cwd(), ".data", "a-eye.db");
-    if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
+    const file = process.env.A_EYE_DB_PATH ?? path.join(/* turbopackIgnore: true */ process.cwd(), ".data", "a-eye.db");
+    if (file !== ":memory:") {
+      mkdirSync(path.dirname(file), { recursive: true });
+      applyPendingRestore(file);
+    }
     const conn = new DatabaseSync(file);
-    conn.exec("pragma journal_mode = wal; pragma foreign_keys = on;");
+    conn.exec("pragma journal_mode = wal; pragma busy_timeout = 5000; pragma synchronous = normal; pragma foreign_keys = on;");
     conn.exec(SCHEMA);
     migrate(conn);
     const { n } = conn.prepare("select count(*) as n from questions").get() as { n: number };
@@ -263,6 +294,17 @@ export function db(): DatabaseSync {
     g.__aeyeDb = conn;
   }
   return g.__aeyeDb;
+}
+
+export function dbWritable(): boolean {
+  try {
+    const conn = db();
+    conn.exec("create table if not exists _health (id integer primary key check (id = 1), checked_at text not null)");
+    conn.prepare("insert into _health (id, checked_at) values (1, ?) on conflict(id) do update set checked_at = excluded.checked_at").run(new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const shortId = () => randomUUID().replace(/-/g, "").slice(0, 10);
@@ -371,7 +413,9 @@ export function observerEntries(observerId: string) {
     captured_at: r.captured_at as string,
     status: r.status as QuestionStatus,
     won,
-    prize: paidXrp ? Number(dropsToXrpString(r.xrpl_drops as string)) : payoutAmount(r.prize_amount as number),
+    prize: paidXrp
+      ? Number(dropsToXrpString(r.xrpl_drops as string))
+      : payoutAmount(potAmount({ id: r.question_id as string, prize_amount: r.prize_amount as number })),
     currency: paidXrp ? "XRP" : (r.currency as string),
     };
   });
@@ -496,15 +540,19 @@ export async function allOpenQuestions() {
 
 export async function getResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   await settleDue();
-  return buildResults(id, origin);
+  const results = await buildResults(id, origin);
+  return results ? sealResults(results) : undefined;
 }
 
-async function buildResults(id: string, origin: string): Promise<QuestionResults | undefined> {
+export async function buildResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   const q = questionById(id);
   if (!q) return undefined;
   const options = JSON.parse(q.options) as string[];
   const subs = submissionsFor(id);
   const raffle = db().prepare("select * from raffles where question_id = ?").get(id) as RaffleRow | undefined;
+  const peeks = db()
+    .prepare("select payer_address, amount, payment_tx, created_at from peeks where question_id = ? and payment_tx is not null")
+    .all(id) as { payer_address: string | null; amount: number; payment_tx: string; created_at: string }[];
   const names = new Map(
     (
       db()
@@ -532,12 +580,65 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
   const winner = raffle?.winner_submission_id
     ? evidence.find((e) => e.id === raffle.winner_submission_id)
     : undefined;
+  const pot = potAmount(q);
+  const ausdFlows: AusdFlow[] = [];
+  if (q.payment_tx) {
+    ausdFlows.push({
+      kind: "bounty",
+      amount: Math.round(q.prize_amount * 100) / 100,
+      currency: q.currency,
+      tx: q.payment_tx,
+      url: explorerTxUrl(q.payment_tx),
+      from_label: agentLabel(q.payer_address),
+      to_label: "treasury",
+      at: q.created_at,
+    });
+  }
+  for (const peek of peeks) {
+    ausdFlows.push({
+      kind: "peek",
+      amount: Math.round(peek.amount * 100) / 100,
+      currency: q.currency,
+      tx: peek.payment_tx,
+      url: explorerTxUrl(peek.payment_tx),
+      from_label: agentLabel(peek.payer_address),
+      to_label: "treasury",
+      at: peek.created_at,
+    });
+  }
+  if (raffle?.payout_tx) {
+    ausdFlows.push({
+      kind: "payout",
+      amount: payoutAmount(pot),
+      currency: q.currency,
+      tx: raffle.payout_tx,
+      url: explorerTxUrl(raffle.payout_tx),
+      from_label: "treasury",
+      to_label: winner?.observer ?? "winner",
+      at: q.closed_at ?? q.closes_at,
+    });
+  }
+  if (q.refund_tx) {
+    ausdFlows.push({
+      kind: "refund",
+      amount: Math.round(q.prize_amount * 100) / 100,
+      currency: q.currency,
+      tx: q.refund_tx,
+      url: explorerTxUrl(q.refund_tx),
+      from_label: "treasury",
+      to_label: "agent",
+      at: q.closed_at ?? q.closes_at,
+    });
+  }
+  ausdFlows.sort((a, b) => Date.parse(a.at ?? "") - Date.parse(b.at ?? ""));
   return {
     ...summarize(q),
     tally: tally(options, subs.map((s) => s.option_index)),
     evidence,
     web_baseline: q.web_baseline ? JSON.parse(q.web_baseline) : undefined,
     gallery_url: `${origin}/q/${q.id}`,
+    pot_usd: pot,
+    ausd_flows: ausdFlows,
     raffle: {
       seed_commit: q.seed_commit,
       seed_reveal: raffle?.seed_reveal,
@@ -545,7 +646,7 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
       entropy_block_number: raffle?.entropy_block_number ?? undefined,
       winner_submission_id: raffle?.winner_submission_id ?? undefined,
       winner_observer: winner?.observer,
-      prize_amount: payoutAmount(q.prize_amount),
+      prize_amount: payoutAmount(pot),
       currency: q.currency,
       payout_tx: raffle?.payout_tx ?? undefined,
       payout_url: raffle?.payout_tx ? explorerTxUrl(raffle.payout_tx) : undefined,
@@ -554,7 +655,44 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
   };
 }
 
+const agentLabel = (address: string | null) =>
+  address ? `agent ${address.slice(0, 6)}…${address.slice(-4)}` as const : "agent" as const;
+
 export const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
+
+export function peekRevenue(questionId: string): number {
+  const row = db()
+    .prepare("select coalesce(sum(amount), 0) as amount from peeks where question_id = ? and payment_tx is not null")
+    .get(questionId) as { amount: number };
+  return Math.round(row.amount * 100) / 100;
+}
+
+export function potAmount(question: Pick<QuestionRow, "id" | "prize_amount">): number {
+  return Math.round((question.prize_amount + peekRevenue(question.id)) * 100) / 100;
+}
+
+export function recordPeek(questionId: string, payer: string, amountUsd: number, tx: string) {
+  const responsesAtPeek = db()
+    .prepare("select count(*) as n from submissions where question_id = ?")
+    .get(questionId) as { n: number };
+  db()
+    .prepare(
+      "insert into peeks (id, question_id, payer_address, amount, payment_tx, responses_at_peek, created_at) values (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run(randomUUID(), questionId, payer, Math.round(amountUsd * 100) / 100, tx, responsesAtPeek.n, new Date().toISOString());
+}
+
+export function sealResults(results: QuestionResults): QuestionResults {
+  if (results.status !== "open" || !peekPaywallActive()) return results;
+  const origin = new URL(results.gallery_url).origin;
+  return {
+    ...results,
+    tally: results.tally.map((row) => ({ ...row, count: 0, pct: 0 })),
+    evidence: [],
+    sealed: true,
+    peek: { price_usd: Number(peekPriceUnits()) / 10 ** 6, url: `${origin}/api/questions/${results.id}/peek` },
+  };
+}
 
 // ---------- observer stats & leaderboard ----------
 
@@ -593,7 +731,7 @@ function loadAnswerRows(): AnswerRow[] {
 function loadWinRows(): WinRow[] {
   const rows = db()
     .prepare(
-      `select r.winner_submission_id as submission_id, s.observer_id, s.captured_at, q.prize_amount,
+      `select r.winner_submission_id as submission_id, r.question_id, s.observer_id, s.captured_at, q.prize_amount,
               x.payout_tx as xrpl_payout_tx
          from raffles r
          join submissions s on s.id = r.winner_submission_id
@@ -607,7 +745,9 @@ function loadWinRows(): WinRow[] {
     observer_id: r.observer_id as string,
     captured_at: r.captured_at as string,
     // Wins paid in XRP from an escrowed pot still count as wins, but not as AUSD earned.
-    prize: r.xrpl_payout_tx ? 0 : payoutAmount(r.prize_amount as number),
+    prize: r.xrpl_payout_tx
+      ? 0
+      : payoutAmount(potAmount({ id: r.question_id as string, prize_amount: r.prize_amount as number })),
   }));
 }
 
@@ -906,7 +1046,12 @@ async function payWinner(questionId: string, winnerSubmissionId: string, prizeUs
     console.warn(`[payments] winner of ${questionId} has no payout address; payout pending`);
     return;
   }
-  const tx = await sendFromTreasury("payout", winner.evm_address, winnerPayoutUnits(prizeUsd));
+  const q = questionById(questionId);
+  const tx = await sendFromTreasury(
+    "payout",
+    winner.evm_address,
+    winnerPayoutUnits(q ? potAmount(q) : prizeUsd),
+  );
   if (tx) db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
 }
 
@@ -1347,7 +1492,7 @@ function seed(conn: DatabaseSync) {
 
 export async function questionsByAgent(agentLabel: string, origin: string) {
   const rows = db()
-    .prepare("select id from questions where agent_label = ? order by created_at desc limit 50")
+    .prepare("select id from questions where agent_label = ? collate nocase order by created_at desc limit 50")
     .all(agentLabel) as { id: string }[];
   const results = await Promise.all(rows.map((r) => getResults(r.id, origin)));
   return results.filter((r): r is QuestionResults => Boolean(r));

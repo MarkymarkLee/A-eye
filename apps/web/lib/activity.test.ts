@@ -6,9 +6,11 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
+const transferAusdViaFacilitator = vi.fn();
 vi.mock("./chain", async (original) => ({
   ...(await original<typeof import("./chain")>()),
   transferAusd,
+  transferAusdViaFacilitator,
 }));
 
 const uploadDir = mkdtempSync(path.join(tmpdir(), "a-eye-activity-"));
@@ -76,9 +78,12 @@ async function submit(questionId: string, observerId: string, optionIndex: numbe
 
 describe("activity feed", () => {
   beforeEach(() => {
+    vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "1");
     transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
+    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("emits questions, verified photos, settlement, raffle, payout, counters, and since filtering", async () => {
