@@ -32,7 +32,8 @@ Camera and geolocation require HTTPS on a phone. Use an HTTPS tunnel or the host
 - `/q/[id]`: results, evidence gallery, comparisons, and raffle details.
 - `/live`: live event feed and dashboard; polls `GET /api/activity?since=&limit=`.
 - `/agents`: agent setup information and a test-question form.
-- `/me`: observer identity, payout wallet, entries, and winnings.
+- `/me`: observer identity, payout wallet, entries, winnings, stats and badges.
+- `/leaderboard`: observer rankings for the week or all time.
 - `GET /api/questions`: open questions; `POST /api/questions`: create a question.
 - `POST /api/questions/[id]/submissions`: submit a photo answer.
 - `GET /api/questions/[id]`: question results.
@@ -63,7 +64,7 @@ Claude Desktop / Claude Code config:
 }
 ```
 
-Tools include `ask_location_question`, `get_question_results` (with photos as image blocks), `wait_for_results`, `check_coverage`, and `list_my_questions`.
+Tools include `ask_location_question`, `get_question_results` (with photos as image blocks), `wait_for_results`, `check_coverage`, and `list_my_questions`. Each evidence item carries `observer_reputation` — the observer's agreement rate with the crowd on past closed questions plus their answer count — so agents can weight answers.
 
 ### Payments: x402 and AUSD on Base Sepolia
 

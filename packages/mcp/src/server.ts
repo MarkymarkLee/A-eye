@@ -27,9 +27,14 @@ async function resultsContent(
   for (const [i, ev] of evidence.entries()) {
     const img = images[i];
     if (!img) continue;
+    const rep = ev.observer_reputation;
+    const repText =
+      rep.agreement_rate === null
+        ? ", new observer (no closed questions yet)"
+        : `, observer agreed with the crowd ${Math.round(rep.agreement_rate * 100)}% of the time on ${rep.scored_answers} closed questions (${rep.answer_count} answers)`;
     content.push({
       type: "text",
-      text: `Evidence #${i + 1}: "${ev.answer}"${ev.free_text ? ` (${ev.free_text})` : ""}, ${ev.distance_m} m away, captured ${ev.captured_at}`,
+      text: `Evidence #${i + 1}: "${ev.answer}"${ev.free_text ? ` (${ev.free_text})` : ""}, ${ev.distance_m} m away, captured ${ev.captured_at}${repText}`,
     });
     content.push({ type: "image", data: img.data, mimeType: img.mimeType });
   }
@@ -69,7 +74,7 @@ export function createServer(
     {
       title: "Get question results",
       description:
-        "Percent per answer, response count, gallery link, raffle info and (optionally) evidence photos downscaled to about 512 px, capped at 8 images by default.",
+        "Percent per answer, response count, gallery link, raffle info and (optionally) evidence photos downscaled to about 512 px, capped at 8 images by default. Each evidence item carries observer_reputation — how often that observer agreed with the crowd on past closed questions, plus their answer count — so you can weight answers.",
       inputSchema: {
         question_id: z.string(),
         include_images: z.boolean().default(true),
@@ -88,7 +93,8 @@ export function createServer(
     "wait_for_results",
     {
       title: "Wait for results",
-      description: "Block until the question closes or the timeout passes, then return the results.",
+      description:
+        "Block until the question closes or the timeout passes, then return the results. Each evidence item carries observer_reputation — how often that observer agreed with the crowd on past closed questions, plus their answer count — so you can weight answers.",
       inputSchema: {
         question_id: z.string(),
         timeout_s: z.number().int().min(1).max(1800).default(300),

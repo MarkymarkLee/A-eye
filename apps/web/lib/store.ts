@@ -20,6 +20,15 @@ import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
 import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
+import {
+  computeStats,
+  reputationOf,
+  type AnswerRow,
+  type LeaderboardEntry,
+  type LeaderboardRange,
+  type ObserverStats,
+  type WinRow,
+} from "./reputation";
 import { explorerTxUrl } from "./chain";
 import {
   XrplError,
@@ -469,9 +478,11 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
         .all(id) as { id: string; display_name: string }[]
     ).map((o) => [o.id, o.display_name]),
   );
+  const reputations = computeStats(loadAnswerRows(), loadWinRows(), { now: new Date() });
   const evidence: Evidence[] = await Promise.all(
     subs.map(async (s) => ({
       id: s.id,
+      observer_reputation: reputationOf(reputations.get(s.observer_id) ?? EMPTY_STATS),
       answer: options[s.option_index]!,
       option_index: s.option_index,
       free_text: s.free_text ?? undefined,
@@ -508,6 +519,98 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
 }
 
 export const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
+
+// ---------- observer stats & leaderboard ----------
+
+const EMPTY_STATS: ObserverStats = {
+  verified_answers: 0,
+  questions_won: 0,
+  ausd_earned: 0,
+  current_streak: 0,
+  best_streak: 0,
+  agreement_rate: null,
+  agreement_scored: 0,
+  agreement_agreed: 0,
+  badges: [],
+};
+
+/** All answers joined to their question's status (closed = not open). */
+function loadAnswerRows(): AnswerRow[] {
+  const rows = db()
+    .prepare(
+      `select s.id as submission_id, s.observer_id, s.question_id, s.option_index, s.captured_at,
+              q.status as qstatus
+         from submissions s join questions q on q.id = s.question_id`,
+    )
+    .all() as Record<string, unknown>[];
+  return rows.map((r) => ({
+    submission_id: r.submission_id as string,
+    observer_id: r.observer_id as string,
+    question_id: r.question_id as string,
+    option_index: r.option_index as number,
+    captured_at: r.captured_at as string,
+    closed: (r.qstatus as string) !== "open",
+  }));
+}
+
+/** Raffle wins joined to their submission; prize = net winner payout. */
+function loadWinRows(): WinRow[] {
+  const rows = db()
+    .prepare(
+      `select r.winner_submission_id as submission_id, s.observer_id, s.captured_at, q.prize_amount,
+              x.payout_tx as xrpl_payout_tx
+         from raffles r
+         join submissions s on s.id = r.winner_submission_id
+         join questions q on q.id = r.question_id
+    left join xrpl_escrows x on x.question_id = q.id
+        where r.winner_submission_id is not null`,
+    )
+    .all() as Record<string, unknown>[];
+  return rows.map((r) => ({
+    submission_id: r.submission_id as string,
+    observer_id: r.observer_id as string,
+    captured_at: r.captured_at as string,
+    // Wins paid in XRP from an escrowed pot still count as wins, but not as AUSD earned.
+    prize: r.xrpl_payout_tx ? 0 : payoutAmount(r.prize_amount as number),
+  }));
+}
+
+export async function observerStats(observerId: string): Promise<ObserverStats> {
+  await settleDue();
+  const stats = computeStats(loadAnswerRows(), loadWinRows(), { now: new Date() });
+  return stats.get(observerId) ?? EMPTY_STATS;
+}
+
+export async function leaderboard(
+  range: LeaderboardRange,
+  viewerId?: string,
+  limit = 25,
+): Promise<LeaderboardEntry[]> {
+  await settleDue();
+  const since = range === "week" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() : undefined;
+  const stats = computeStats(loadAnswerRows(), loadWinRows(), { now: new Date(), since });
+  const names = new Map(
+    (db().prepare("select id, display_name from observers").all() as { id: string; display_name: string }[]).map(
+      (o) => [o.id, o.display_name],
+    ),
+  );
+  return [...stats.entries()]
+    .filter(([, s]) => s.verified_answers > 0)
+    .map(([observerId, s]) => ({
+      ...s,
+      display_name: names.get(observerId) ?? "observer",
+      is_you: observerId === viewerId,
+    }))
+    .sort(
+      (a, b) =>
+        b.verified_answers - a.verified_answers ||
+        b.questions_won - a.questions_won ||
+        (b.agreement_rate ?? -1) - (a.agreement_rate ?? -1) ||
+        a.display_name.localeCompare(b.display_name),
+    )
+    .slice(0, limit)
+    .map((e, i) => ({ rank: i + 1, ...e }));
+}
 
 // ---------- submissions ----------
 
@@ -1019,7 +1122,7 @@ function seed(conn: DatabaseSync) {
     created: number;
     closes: number;
     baseline: { answer: string; source: string };
-    answers: { option: number; dist: number; minAgo: number; img: string; text?: string }[];
+    answers: { option: number; dist: number; minAgo: number; img: string; text?: string; obs?: number }[];
   }) => {
     const { seed: s, commit } = newSeed();
     insQ.run(
@@ -1028,7 +1131,7 @@ function seed(conn: DatabaseSync) {
     );
     q.answers.forEach((a, i) => {
       insS.run(
-        `s_seed_${q.id}_${i}`, q.id, `seed-obs-${i % names.length}`, a.option, a.text ?? null,
+        `s_seed_${q.id}_${i}`, q.id, `seed-obs-${a.obs ?? i % names.length}`, a.option, a.text ?? null,
         `https://picsum.photos/seed/${a.img}/720/900`, sha256Hex(a.img), q.lat, q.lng,
         8 + ((i * 7) % 20), a.dist, iso(-a.minAgo),
       );
@@ -1100,6 +1203,107 @@ function seed(conn: DatabaseSync) {
     closes: 42,
     baseline: { answer: "Listed as open 24 hours", source: "Library website (mock)" },
     answers: [],
+  });
+
+  // Demo history: past questions (still 'open' with closes_at in the past, so
+  // settleDue closes and raffles them on first read) give observers streaks,
+  // agreement records and badges. Priya (obs 0) answered every day 1-4 ago
+  // plus today, always with the majority -> 5-day streak + Sharpshooter.
+  // Noor (obs 7) answered days 1-3 ago only -> 3-day streak. Tomas (obs 1)
+  // splits right/wrong -> ~50% agreement. Ayumi (obs 6) only answered today.
+  insObs.run("seed-obs-7", "Noor Haddad", iso(-600));
+  const day = 24 * 60;
+
+  add({
+    id: "hist-campanile",
+    prompt: "How busy is the Campanile esplanade?",
+    options: ["Empty", "A few people", "Packed"],
+    free_text: false,
+    place: "Campanile Esplanade",
+    lat: 37.87203,
+    lng: -122.25783,
+    radius_m: 120,
+    prize: 1,
+    min: 3,
+    max: 10,
+    created: -(day + 700),
+    closes: -(day + 60),
+    baseline: { answer: "No live occupancy data", source: "Campus events page (mock)" },
+    answers: [
+      { option: 1, dist: 31, minAgo: day + 300, img: "aeye-hist-campanile-1", obs: 0 },
+      { option: 1, dist: 44, minAgo: day + 260, img: "aeye-hist-campanile-2", obs: 1 },
+      { option: 1, dist: 18, minAgo: day + 200, img: "aeye-hist-campanile-3", obs: 2 },
+      { option: 1, dist: 57, minAgo: day + 150, img: "aeye-hist-campanile-4", obs: 7 },
+    ],
+  });
+
+  add({
+    id: "hist-doe",
+    prompt: "Is the Doe Library reading room quiet right now?",
+    options: ["Silent", "Some chatter", "Loud"],
+    free_text: false,
+    place: "Doe Library",
+    lat: 37.87222,
+    lng: -122.25942,
+    radius_m: 100,
+    prize: 1,
+    min: 3,
+    max: 10,
+    created: -(2 * day + 700),
+    closes: -(2 * day + 60),
+    baseline: { answer: "Reading rooms are quiet zones", source: "Library policy (mock)" },
+    answers: [
+      { option: 0, dist: 12, minAgo: 2 * day + 320, img: "aeye-hist-doe-1", obs: 0 },
+      { option: 0, dist: 25, minAgo: 2 * day + 240, img: "aeye-hist-doe-2", obs: 2 },
+      { option: 0, dist: 39, minAgo: 2 * day + 180, img: "aeye-hist-doe-3", obs: 3 },
+      { option: 0, dist: 8, minAgo: 2 * day + 120, img: "aeye-hist-doe-4", obs: 7 },
+    ],
+  });
+
+  add({
+    id: "hist-soda",
+    prompt: "Are there free tables outside Soda Hall?",
+    options: ["Plenty free", "One or two", "None"],
+    free_text: false,
+    place: "Soda Hall",
+    lat: 37.87552,
+    lng: -122.25879,
+    radius_m: 120,
+    prize: 1,
+    min: 3,
+    max: 10,
+    created: -(3 * day + 700),
+    closes: -(3 * day + 60),
+    baseline: { answer: "No live occupancy data", source: "Building page (mock)" },
+    answers: [
+      { option: 2, dist: 21, minAgo: 3 * day + 300, img: "aeye-hist-soda-1", obs: 0 },
+      { option: 2, dist: 33, minAgo: 3 * day + 250, img: "aeye-hist-soda-2", obs: 1 },
+      { option: 2, dist: 48, minAgo: 3 * day + 200, img: "aeye-hist-soda-3", obs: 7 },
+      { option: 0, dist: 60, minAgo: 3 * day + 160, img: "aeye-hist-soda-4", obs: 3 },
+    ],
+  });
+
+  add({
+    id: "hist-strada",
+    prompt: "Is the Caffe Strada patio full?",
+    options: ["Empty", "Half full", "Full"],
+    free_text: false,
+    place: "Caffe Strada",
+    lat: 37.86937,
+    lng: -122.25476,
+    radius_m: 100,
+    prize: 1,
+    min: 3,
+    max: 10,
+    created: -(4 * day + 700),
+    closes: -(4 * day + 60),
+    baseline: { answer: "Opens 6:30am daily", source: "Business listing (mock)" },
+    answers: [
+      { option: 1, dist: 15, minAgo: 4 * day + 310, img: "aeye-hist-strada-1", obs: 0 },
+      { option: 1, dist: 29, minAgo: 4 * day + 260, img: "aeye-hist-strada-2", obs: 2 },
+      { option: 0, dist: 41, minAgo: 4 * day + 210, img: "aeye-hist-strada-3", obs: 1 },
+      { option: 1, dist: 52, minAgo: 4 * day + 170, img: "aeye-hist-strada-4", obs: 3 },
+    ],
   });
 }
 
