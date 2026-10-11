@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowRight, BadgeCheck, Bell, Camera, ChevronRight, Coins, Flame, Target, Trophy, Wallet } from "lucide-react";
+import { ArrowRight, BadgeCheck, Bell, Camera, ChevronRight, Coins, Flame, Lock, Target, Trophy, Wallet } from "lucide-react";
 import { ago } from "@/lib/time";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
@@ -12,6 +12,7 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Disclosure } from "./ui/disclosure";
 import { EmptyState } from "./ui/empty-state";
+import { PLATFORM_FEE } from "@a-eye/shared";
 import type { ObserverStats } from "@/lib/reputation";
 import { BadgeGrid, pct } from "./badges";
 import { PushOptIn } from "./push-opt-in";
@@ -282,6 +283,15 @@ export function MeView() {
 
       <section>
         <h2 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Your answers</h2>
+        {entries.some((e) => e.status === "open") && (
+          <p className="mt-3 flex items-start gap-2.5 rounded-[16px] bg-surface-2 px-4 py-3 text-[13.5px] leading-snug text-muted">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Your answer is locked in. Everyone&apos;s answers stay hidden until the question closes, so no one can copy the crowd. Then
+              one person who answered wins {Math.round((1 - PLATFORM_FEE) * 100)}% of the pot.
+            </span>
+          </p>
+        )}
         {!me && !loadError && (
           <div className="mt-3 grid gap-2.5">
             {[0, 1, 2].map((i) => (

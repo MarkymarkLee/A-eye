@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, Bot, Camera, Check, CircleCheck, CircleX, Copy, Eye, Globe, ImageIcon, Lock, MapPin, Receipt, ShieldCheck, Trophy, Users } from "lucide-react";
-import type { AusdFlow, Evidence, MarketComparison, QuestionResults } from "@a-eye/shared";
+import { PLATFORM_FEE, type AusdFlow, type Evidence, type MarketComparison, type QuestionResults } from "@a-eye/shared";
 import { yesOptionIndex, webVsHumans } from "@/lib/compare";
 import { formatDistance } from "@/lib/geo";
 import { raffleSnippet } from "@/lib/raffle-snippet";
@@ -21,6 +21,7 @@ import { Disclosure } from "./ui/disclosure";
 import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
 import { MarketVsHumans } from "./market-vs-humans";
+import { MoneyTimeline, PotBreakdown } from "./money-timeline";
 
 export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: boolean }) {
   const [r, setR] = useState(initial);
@@ -129,7 +130,7 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
             <EmptyState
               icon={<Lock className="size-7" aria-hidden />}
               title={r.responses > 0 ? `${r.responses} ${r.responses === 1 ? "photo is" : "photos are"} in` : "Photos land here"}
-              body="Photos and answers are revealed when the question closes, so nobody is swayed by earlier answers."
+              body="Answers stay hidden until the question closes, so no one can copy the crowd. Every photo shows up here the moment it closes."
               className="aspect-[4/3] justify-center"
             />
           ) : r.evidence.length === 0 ? (
@@ -261,13 +262,11 @@ function Prize({ r }: { r: QuestionResults }) {
                 ? `Only ${r.responses} of ${r.min_responses} needed answers came in, so the asker gets their money back.`
                 : "Everyone with a verified photo gets one entry. The winner is picked at random when it closes."}
           </p>
-          {peekBoost(r) > 0 && (
-            <p className="mt-1.5 text-[13px] font-medium text-accent-ink">
-              Includes {fmt(peekBoost(r))} {r.raffle.currency} added by agents who paid for an early look.
-            </p>
-          )}
         </div>
       </Card>
+      {r.status !== "expired" && (r.pot_usd ?? 0) > 0 && (
+        <PotBreakdown prize={r.prize_amount} pot={r.pot_usd} currency={r.currency} fee={PLATFORM_FEE} />
+      )}
 
       <Disclosure title="How is this fair?" icon={<ShieldCheck className="size-5" aria-hidden />}>
         <p className="text-[14px] leading-relaxed text-muted">
@@ -312,20 +311,19 @@ function Prize({ r }: { r: QuestionResults }) {
         {settled && r.raffle.winner_submission_id && <VerifySnippet r={r} />}
       </Disclosure>
 
-      {(r.ausd_flows?.length ?? 0) > 0 && <MoneyTrail flows={r.ausd_flows} />}
+      {(r.ausd_flows?.length ?? 0) > 0 && <MoneyTrail flows={r.ausd_flows} open={r.status === "open"} />}
     </div>
   );
 }
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
-const peekBoost = (r: QuestionResults) => Math.round(((r.pot_usd ?? 0) - (r.prize_amount ?? 0)) * 100) / 100;
 
 function Sealed({ r, onPeekHelp }: { r: QuestionResults; onPeekHelp: () => void }) {
   return (
     <div>
       <p className="flex items-start gap-2 text-[15px] leading-relaxed text-muted">
         <Lock className="mt-1 size-4 shrink-0" aria-hidden />
-        <span>The split stays hidden until this closes, so everyone answers on their own.</span>
+        <span>Answers stay hidden until the question closes, so no one can copy the crowd. You&apos;ll see the full split and every photo the moment it closes.</span>
       </p>
       <ul className="mt-4 flex flex-wrap gap-2" aria-label="Choices">
         {r.tally.map((t) => (
@@ -337,7 +335,7 @@ function Sealed({ r, onPeekHelp }: { r: QuestionResults; onPeekHelp: () => void 
       {r.peek && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-accent-soft px-4 py-3">
           <p className="text-[13.5px] leading-snug text-accent-ink">
-            Agents can pay {fmt(r.peek.price_usd)} {r.currency} for an early look. It goes into the prize.
+            Agents can pay <b className="font-semibold">{fmt(r.peek.price_usd)} {r.currency}</b> to see answers early. Every cent goes into the prize pot.
           </p>
           <Button variant="soft" size="sm" onClick={onPeekHelp}>
             <Eye className="size-4" aria-hidden /> For agents
@@ -403,43 +401,20 @@ function Snippet({ label, value }: { label: string; value: string }) {
   );
 }
 
-const FLOW_LABEL: Record<AusdFlow["kind"], string> = {
-  bounty: "Prize paid by",
-  peek: "Early look by",
-  payout: "Prize sent to",
-  refund: "Refund to",
-};
-
-/** Where the money went, with receipts. Tucked away for agents and judges. */
-function MoneyTrail({ flows }: { flows: AusdFlow[] }) {
+/** Where the money went, as a timeline with BaseScan receipts. */
+function MoneyTrail({ flows, open }: { flows: AusdFlow[]; open: boolean }) {
   return (
-    <Disclosure title="Where the money went" icon={<Receipt className="size-5" aria-hidden />}>
-      <p className="text-[14px] leading-relaxed text-muted">
-        Every AUSD movement for this question on Base Sepolia, gasless via x402 and ERC-3009. Open a receipt to check it on BaseScan.
-      </p>
-      <ol className="mt-3 divide-y divide-line">
-        {flows.map((f) => (
-          <li key={`${f.kind}-${f.tx}`} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-0.5 py-2.5">
-            <p className="text-[14px]">
-              <span className="text-muted">{FLOW_LABEL[f.kind]}</span>{" "}
-              <span className="font-medium">{f.kind === "bounty" || f.kind === "peek" ? f.from_label : f.to_label}</span>
-            </p>
-            <p className={cn("text-right font-mono text-[14px] font-semibold tabular-nums", (f.kind === "payout" || f.kind === "refund") && "text-accent-ink")}>
-              {f.kind === "payout" || f.kind === "refund" ? "−" : "+"}
-              {fmt(f.amount)} {f.currency}
-            </p>
-            <a
-              href={f.url}
-              target="_blank"
-              rel="noreferrer"
-              className="col-span-2 w-fit font-mono text-[12px] text-muted underline decoration-line underline-offset-4 hover:text-ink"
-            >
-              tx {short(f.tx)}
-            </a>
-          </li>
-        ))}
-      </ol>
-    </Disclosure>
+    <Card className="p-5">
+      <h2 className="flex items-center gap-2 text-[16px] font-semibold tracking-tight">
+        <Receipt className="size-5 text-accent-ink" aria-hidden /> Where the money went
+      </h2>
+      <p className="mt-1 text-[13.5px] leading-relaxed text-muted">Every dollar for this question, with a public receipt anyone can check.</p>
+      <MoneyTimeline
+        flows={flows}
+        className="mt-4"
+        pending={open ? `When it closes, ${Math.round((1 - PLATFORM_FEE) * 100)}% of the pot goes to one person who answered.` : undefined}
+      />
+    </Card>
   );
 }
 
