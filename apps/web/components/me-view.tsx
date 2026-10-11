@@ -19,6 +19,7 @@ import { PushOptIn } from "./push-opt-in";
 import { XrplWalletSetup } from "./xrpl-wallet-setup";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs } from "./ui/tabs";
+import { TestMoney } from "@/components/ui/test-money";
 
 type Observer = { id: string; display_name: string; evm_address?: string; xrpl_address?: string; payout_rail: "evm" | "xrpl" };
 type Xrpl = {
@@ -331,7 +332,11 @@ export function MeView() {
             value={me ? (me.stats?.current_streak ?? 0) : undefined}
             hint={me?.stats && me.stats.best_streak > me.stats.current_streak ? `Best ${me.stats.best_streak}` : undefined}
           />
-          <Stat icon={<Coins className="size-4" aria-hidden />} label="AUSD earned" value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
+          <Stat icon={<Coins className="size-4" aria-hidden />} label={
+              <>
+                AUSD earned <TestMoney className="ml-auto" align="end" />
+              </>
+            } value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
           <Stat
             icon={<Target className="size-4" aria-hidden />}
             label="Agreement"
@@ -395,7 +400,7 @@ function Stat({
   wide,
 }: {
   icon: React.ReactNode;
-  label: string;
+  label: React.ReactNode;
   value?: number | string;
   hint?: string;
   hot?: boolean;

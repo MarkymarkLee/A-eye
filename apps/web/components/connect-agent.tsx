@@ -5,6 +5,7 @@ import { ArrowUpRight, Check, Copy, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { cn } from "@/lib/cn";
+import { TestMoney } from "@/components/ui/test-money";
 
 export interface ConnectLinks {
   mcpUrl: string;
@@ -176,6 +177,7 @@ export function ConnectAgent({ links, pricing }: { links: ConnectLinks; pricing:
         </Panel>
 
         <Panel title="What it costs" className="lg:col-span-2">
+          <TestMoney className="mt-2" />
           <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
             {cost.map(([term, body]) => (
               <div key={term} className="flex gap-3">
