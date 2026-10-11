@@ -36,6 +36,7 @@ type StoredQuestion = {
     distance_m: number;
     accuracy_m: number;
   }[];
+  market_trades: Record<string, unknown>[];
 };
 
 // Deterministic PRNG (mulberry32) so mock answers are reproducible.
@@ -124,6 +125,7 @@ export function startMockApi(opts: MockOptions = {}): Promise<{ server: Server; 
       })),
       gallery_url: `${origin}/q/${q.id}`,
       market_ref: q.market_ref ?? null,
+      market_trades: q.market_trades,
       place_context: null,
       web_baseline: null,
       raffle,
@@ -164,6 +166,7 @@ export function startMockApi(opts: MockOptions = {}): Promise<{ server: Server; 
           seed,
           seed_commit: sha256Hex(seed),
           submissions: [],
+          market_trades: [],
         };
         questions.set(id, q);
         // Simulated observers, one per tick.
@@ -211,6 +214,31 @@ export function startMockApi(opts: MockOptions = {}): Promise<{ server: Server; 
       const q = questions.get(m[1]!);
       if (!q) return json(res, 404, { error: "Not found" });
       return json(res, 200, resultsShape(q, origin));
+    }
+
+    m = url.pathname.match(/^\/api\/questions\/([^/]+)\/trades$/);
+    if (req.method === "POST" && m) {
+      const q = questions.get(m[1]!);
+      if (!q) return json(res, 404, { error: "Not found" });
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        try {
+          const trade = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+          q.market_trades.push({ ...trade, id: randomUUID(), question_id: q.id, created_at: new Date().toISOString() });
+          return json(res, 201, { trade: q.market_trades.at(-1) });
+        } catch {
+          return json(res, 400, { error: "Invalid JSON" });
+        }
+      });
+      return;
+    }
+
+    m = url.pathname.match(/^\/api\/questions\/([^/]+)\/trades$/);
+    if (req.method === "GET" && m) {
+      const q = questions.get(m[1]!);
+      if (!q) return json(res, 404, { error: "Not found" });
+      return json(res, 200, { trades: q.market_trades });
     }
 
     m = url.pathname.match(/^\/api\/photos\/(.+)$/);

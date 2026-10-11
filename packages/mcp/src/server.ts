@@ -90,6 +90,23 @@ export function createServer(
   );
 
   server.registerTool(
+    "compare_market",
+    {
+      title: "Compare market odds with humans",
+      description:
+        "Live Gemini prediction-market odds for the question's market_ref vs the crowd's YES %, edge in points, and recorded sandbox trades.",
+      inputSchema: { question_id: z.string() },
+    },
+    async ({ question_id }) => {
+      try {
+        return json(await api.marketComparison(question_id));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
     "wait_for_results",
     {
       title: "Wait for results",

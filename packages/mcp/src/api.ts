@@ -2,6 +2,7 @@ import type {
   Coverage,
   CreateQuestionInput,
   CreateQuestionResponse,
+  MarketComparison,
   QuestionResults,
   QuestionSummary,
 } from "@a-eye/shared";
@@ -60,6 +61,10 @@ export class AEyeApi {
 
   getResults(questionId: string) {
     return this.request<QuestionResults>(`/api/questions/${encodeURIComponent(questionId)}`);
+  }
+
+  marketComparison(questionId: string) {
+    return this.request<MarketComparison>(`/api/questions/${encodeURIComponent(questionId)}/market`);
   }
 
   coverage(lat: number, lng: number) {

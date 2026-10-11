@@ -16,10 +16,63 @@ export const MarketRef = z
     event_ticker: z.string().optional(),
     contract_symbol: z.string().optional(),
     label: z.string().optional(),
+    expiry: z.string().nullable().optional(),
     implied_yes: z.number().min(0).max(1).nullable().optional(),
   })
   .loose();
 export type MarketRef = z.infer<typeof MarketRef>;
+
+export const RecordMarketTradeInput = z.object({
+  provider: z.literal("gemini"),
+  env: z.enum(["sandbox", "production"]),
+  symbol: z.string().min(1).max(120),
+  side: z.enum(["buy", "none"]),
+  outcome: z.enum(["yes", "no"]),
+  quantity: z.string().min(1).max(32),
+  price: z.number().min(0).max(1),
+  status: z.enum(["filled", "partially_filled", "cancelled", "open", "rejected", "dry_run", "no_trade"]),
+  order_id: z.string().max(80).nullable(),
+  filled_quantity: z.string().min(1).max(32),
+  avg_price: z.number().min(0).max(1).nullable(),
+  market_pct: z.number().min(0).max(100).nullable(),
+  crowd_pct: z.number().min(0).max(100).nullable(),
+  edge_pts: z.number().min(-100).max(100).nullable(),
+  dry_run: z.boolean(),
+  reason: z.string().max(500).nullable(),
+});
+export type RecordMarketTradeInput = z.infer<typeof RecordMarketTradeInput>;
+
+export type MarketTrade = RecordMarketTradeInput & {
+  id: string;
+  question_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LiveMarketOdds = {
+  implied_yes: number;
+  best_bid: number | null;
+  best_ask: number | null;
+  last_trade: number | null;
+  buy_yes: number | null;
+  buy_no: number | null;
+  fetched_at: string;
+};
+
+export type MarketComparison = {
+  question_id: string;
+  prompt: string;
+  status: QuestionStatus;
+  market_ref: MarketRef;
+  yes_option: string;
+  live: LiveMarketOdds | null;
+  market_pct: number | null;
+  asked_market_pct: number | null;
+  crowd_pct: number | null;
+  responses: number;
+  edge_pts: number | null;
+  trades: MarketTrade[];
+};
 
 export const CreateQuestionInput = z.object({
   lat: z.number().min(-90).max(90),
@@ -135,6 +188,7 @@ export type QuestionResults = QuestionSummary & {
   web_baseline?: { answer: string; source: string };
   raffle: RaffleInfo;
   gallery_url: string;
+  market_trades?: MarketTrade[];
 };
 
 export const GEO_RULES = {

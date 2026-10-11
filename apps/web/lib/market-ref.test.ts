@@ -1,4 +1,4 @@
-import { CreateQuestionInput } from "@a-eye/shared";
+import { CreateQuestionInput, RecordMarketTradeInput } from "@a-eye/shared";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,5 +28,51 @@ describe("market_ref", () => {
   it("is omitted when not provided", async () => {
     const id = store.createQuestion(CreateQuestionInput.parse(base));
     expect((await store.getResults(id, "http://localhost"))?.market_ref).toBeUndefined();
+  });
+
+  it("upserts sandbox trades by question and order id and includes them in results", async () => {
+    const id = store.createQuestion(
+      CreateQuestionInput.parse({
+        ...base,
+        market_ref: {
+          provider: "gemini",
+          env: "sandbox",
+          event_ticker: "SOL2610112200",
+          contract_symbol: "GEMI-SOL2610112200-HI107",
+          implied_yes: 0.62,
+        },
+      }),
+    );
+    const trade = RecordMarketTradeInput.parse({
+      provider: "gemini",
+      env: "sandbox",
+      symbol: "GEMI-SOL2610112200-HI107",
+      side: "buy",
+      outcome: "yes",
+      quantity: "2",
+      price: 0.63,
+      status: "open",
+      order_id: "145853902277378635",
+      filled_quantity: "0",
+      avg_price: null,
+      market_pct: 62,
+      crowd_pct: 85,
+      edge_pts: 23,
+      dry_run: false,
+      reason: null,
+    });
+    const first = store.recordMarketTrade(id, trade);
+    const updated = store.recordMarketTrade(id, { ...trade, status: "filled", filled_quantity: "2" });
+    const results = await store.getResults(id, "http://localhost");
+
+    expect(updated.id).toBe(first.id);
+    expect(updated.status).toBe("filled");
+    expect(results?.market_trades).toHaveLength(1);
+    expect(results?.market_trades?.[0]).toMatchObject({
+      order_id: "145853902277378635",
+      dry_run: false,
+      status: "filled",
+      filled_quantity: "2",
+    });
   });
 });
