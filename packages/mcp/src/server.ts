@@ -18,8 +18,12 @@ async function resultsContent(
   results: QuestionResults,
   includeImages: boolean,
   maxImages: number,
+  prelude?: string,
 ): Promise<CallToolResult> {
-  const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(results, null, 2) }];
+  const content: CallToolResult["content"] = [
+    ...(prelude ? [{ type: "text" as const, text: prelude }] : []),
+    { type: "text", text: JSON.stringify(results, null, 2) },
+  ];
   if (!includeImages) return { content };
   const limit = Number.isFinite(maxImages) ? Math.max(0, Math.floor(maxImages)) : 8;
   const evidence = results.evidence.slice(0, limit);
@@ -43,6 +47,11 @@ async function resultsContent(
   }
   return { content };
 }
+
+const sealedResultsNote = (results: QuestionResults) =>
+  results.sealed
+    ? `Results are sealed until the question closes (${results.responses} responses so far). Call peek_results to buy interim results for $${results.peek?.price_usd ?? 0} AUSD, or wait_for_results.`
+    : undefined;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -82,7 +91,30 @@ export function createServer(
     },
     async ({ question_id, include_images }) => {
       try {
-        return await resultsContent(api, await api.getResults(question_id), include_images, maxImages);
+        const results = await api.getResults(question_id);
+        return await resultsContent(api, results, include_images, maxImages, sealedResultsNote(results));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "peek_results",
+    {
+      title: "Peek at interim results",
+      description:
+        "Pay a few cents of AUSD (x402, Base Sepolia) to see interim results of an OPEN question before it closes — tally and evidence are sealed until close otherwise. Peek fees top up the observers' raffle pot. Free once the question has closed.",
+      inputSchema: {
+        question_id: z.string(),
+        include_images: z.boolean().default(true),
+      },
+    },
+    async ({ question_id, include_images }) => {
+      try {
+        const results = await api.peekResults(question_id);
+        const payment = `paid: ${results.paid ? "yes" : "no"}; payment_tx: ${results.payment_tx ?? "none"}`;
+        return await resultsContent(api, results, include_images, maxImages, payment);
       } catch (err) {
         return fail(err);
       }
@@ -109,7 +141,7 @@ export function createServer(
           await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
           results = await api.getResults(question_id);
         }
-        return await resultsContent(api, results, include_images, maxImages);
+        return await resultsContent(api, results, include_images, maxImages, sealedResultsNote(results));
       } catch (err) {
         return fail(err);
       }

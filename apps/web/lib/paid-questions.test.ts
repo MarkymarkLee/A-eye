@@ -10,7 +10,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
-vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd }));
+const transferAusdViaFacilitator = vi.fn();
+vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd, transferAusdViaFacilitator }));
 
 const TREASURY = "0x293214291186180810902D97994c2C72fE88255A";
 const PAYMENT_TX = `0x${"aa".repeat(32)}`;
@@ -74,9 +75,11 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   beforeEach(() => {
     transferAusd.mockReset();
     transferAusd.mockResolvedValue(PAYOUT_TX);
+    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "");
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("challenges with a 402 for prize_usd in AUSD paid to the treasury", async () => {
