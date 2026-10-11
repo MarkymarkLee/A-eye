@@ -43,7 +43,7 @@ export async function notifyNearbyQuestion(
     const results = await Promise.allSettled(
       candidates.map(async (sub) => {
         // Atomic claim first so a concurrent question can't double-send within the interval.
-        if (!claimPushSlot(sub.endpoint, now, minIntervalMs())) return;
+        if (!claimPushSlot(sub.endpoint, now, minIntervalMs())) return false;
         await deps.send(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           payload,
@@ -53,13 +53,15 @@ export async function notifyNearbyQuestion(
             urgency: "high",
           },
         );
+        return true;
       }),
     );
     let sent = 0;
     let failed = 0;
     for (const r of results) {
       if (r.status === "fulfilled") {
-        sent += 1;
+        // false = slot already claimed this interval; neither sent nor failed.
+        if (r.value) sent += 1;
         continue;
       }
       failed += 1;

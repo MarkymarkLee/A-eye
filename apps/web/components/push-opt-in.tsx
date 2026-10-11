@@ -21,6 +21,7 @@ function urlBase64ToUint8Array(base64: string) {
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/** Silent location read: only when the geolocation permission is already granted. */
 async function geolocationIfGranted(): Promise<{ lat: number; lng: number } | undefined> {
   try {
     const perm = await navigator.permissions?.query({ name: "geolocation" as PermissionName });
@@ -37,14 +38,30 @@ async function geolocationIfGranted(): Promise<{ lat: number; lng: number } | un
   }
 }
 
+/** Prompting location read for a user gesture. */
+function geolocationPrompting(): Promise<{ lat: number; lng: number } | undefined> {
+  return new Promise((resolve) =>
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => resolve(undefined),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60_000 },
+    ),
+  );
+}
+
 /** Opt-in row for "new question near you" web push alerts. */
 export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
   const [state, setState] = useState<State>("loading");
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState(1.5);
+  const [hasLocation, setHasLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const subscription = useRef<PushSubscription | null>(null);
+  const fixRef = useRef(fix);
+  fixRef.current = fix;
+  // Stable dependency: the ~110 m-rounded fix, not a new object every GPS tick.
+  const locKey = fix ? `${round3(fix.lat)},${round3(fix.lng)}` : null;
 
   const postSubscription = (sub: PushSubscription, loc?: { lat: number; lng: number }) =>
     fetch("/api/push/subscription", {
@@ -53,6 +70,7 @@ export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
       body: JSON.stringify({ subscription: sub.toJSON(), ...loc }),
     });
 
+  // One-time init: capability check, server config, existing subscription.
   useEffect(() => {
     let alive = true;
     if (!supported()) {
@@ -78,24 +96,31 @@ export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
       const sub = (await reg?.pushManager.getSubscription()) ?? null;
       if (!alive) return;
       subscription.current = sub;
-      if (!sub) {
-        setState("idle");
-        return;
-      }
-      setState("subscribed");
-      // Refresh the coarse location server-side, but only when it moved (~110 m).
-      const loc = fix ?? (await geolocationIfGranted());
+      setState(sub ? "subscribed" : "idle");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // While subscribed, refresh the coarse server-side fix only when it moved (~110 m).
+  useEffect(() => {
+    if (state !== "subscribed" || !subscription.current) return;
+    let alive = true;
+    (async () => {
+      const loc = fixRef.current ?? (await geolocationIfGranted());
       if (!alive || !loc) return;
       const key = `${round3(loc.lat)},${round3(loc.lng)}`;
       if (localStorage.getItem(LOC_KEY) !== key) {
-        const res = await postSubscription(sub, loc).catch(() => null);
+        const res = await postSubscription(subscription.current!, loc).catch(() => null);
         if (res?.ok) localStorage.setItem(LOC_KEY, key);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [fix]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, locKey]);
 
   const subscribe = async () => {
     setBusy(true);
@@ -106,15 +131,18 @@ export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
         setState("denied");
         return;
       }
-      const reg = (await registerServiceWorker()) ?? (await navigator.serviceWorker.ready);
-      const sub = await reg.pushManager.subscribe({
+      await registerServiceWorker();
+      // A freshly registered worker isn't active yet; wait for it before subscribing.
+      const ready = await navigator.serviceWorker.ready;
+      const sub = await ready.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey!),
       });
-      const loc = fix ?? (await geolocationIfGranted());
+      const loc = fixRef.current ?? (await geolocationPrompting());
       const res = await postSubscription(sub, loc);
       if (!res.ok) throw new Error(`subscribe failed: ${res.status}`);
       subscription.current = sub;
+      setHasLocation(!!loc);
       if (loc) localStorage.setItem(LOC_KEY, `${round3(loc.lat)},${round3(loc.lng)}`);
       setState("subscribed");
     } catch {
@@ -160,7 +188,11 @@ export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
       {state === "subscribed" ? (
         <>
           <BellRinging size={18} weight="bold" className="shrink-0 text-ok" />
-          <span className="flex-1">Alerts on for new questions within {radiusKm} km</span>
+          <span className="flex-1">
+            {hasLocation
+              ? `Alerts on for new questions within ${radiusKm} km`
+              : "Alerts on. Share your location to hear about questions near you."}
+          </span>
           <button type="button" onClick={unsubscribe} disabled={busy} className="btn btn-ghost px-2 py-1 text-[13px]">
             <BellSlash size={14} weight="bold" /> Turn off
           </button>
