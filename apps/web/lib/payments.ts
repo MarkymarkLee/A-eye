@@ -23,10 +23,12 @@ export const prizeUnits = (prizeUsd: number) => toBaseUnits(prizeUsd);
 
 export const winnerPayoutUnits = (prizeUsd: number) => winnerPayout(prizeUnits(prizeUsd));
 
-export const peekPriceUnits = () => {
+export const peekPriceUsd = () => {
   const price = Number(process.env.A_EYE_PEEK_PRICE_USD ?? 0.02);
-  return prizeUnits(Number.isFinite(price) && price >= 0 ? price : 0.02);
+  return Number.isFinite(price) && price >= 0 ? price : 0.02;
 };
+
+export const peekPriceUnits = () => prizeUnits(peekPriceUsd());
 
 export const peekPaywallActive = () =>
   Boolean(questionPayTo()) && process.env.ALLOW_UNPAID_QUESTIONS !== "1" && peekPriceUnits() > 0n;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claudeCodeCommand, claudeDesktopConfig, cursorInstallLink, vscodeInstallLink, windsurfConfig } from "./connect-links";
+import { claudeCodeCommand, claudeCodeLocalCommand, cursorInstallLink, npxConfig, NPX_COMMAND, vscodeInstallLink, windsurfConfig } from "./connect-links";
 
 const ORIGIN = "https://a-eye-1zsv.onrender.com";
 
@@ -22,7 +22,9 @@ describe("connect links", () => {
 
   it("builds the Claude Code command and JSON configs", () => {
     expect(claudeCodeCommand(`${ORIGIN}/`)).toBe(`claude mcp add --transport http a-eye ${ORIGIN}/mcp`);
-    expect(JSON.parse(claudeDesktopConfig())).toEqual({ mcpServers: { "a-eye": { command: "npx", args: ["-y", "a-eye-mcp"] } } });
+    expect(JSON.parse(npxConfig())).toEqual({ mcpServers: { "a-eye": { command: "npx", args: ["-y", "a-eye-mcp"] } } });
+    expect(NPX_COMMAND).toBe("npx -y a-eye-mcp");
+    expect(claudeCodeLocalCommand()).toBe("claude mcp add a-eye -- npx -y a-eye-mcp");
     expect(JSON.parse(windsurfConfig(ORIGIN))).toEqual({ mcpServers: { "a-eye": { serverUrl: `${ORIGIN}/mcp` } } });
   });
 });

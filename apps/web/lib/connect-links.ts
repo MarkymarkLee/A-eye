@@ -2,6 +2,8 @@
 export const MCP_SERVER_NAME = "a-eye";
 export const NPM_PACKAGE = "a-eye-mcp";
 export const MCPB_DOWNLOAD_PATH = "/downloads/a-eye.mcpb";
+export const REPO_URL = "https://github.com/PeytonLi/A-eye";
+export const NPX_COMMAND = `npx -y ${NPM_PACKAGE}`;
 
 export function mcpUrl(origin: string) {
   return `${origin.replace(/\/$/, "")}/mcp`;
@@ -22,8 +24,12 @@ export function claudeCodeCommand(origin: string) {
   return `claude mcp add --transport http ${MCP_SERVER_NAME} ${mcpUrl(origin)}`;
 }
 
-/** Claude Desktop's config file only launches local (stdio) servers, so it runs the npm package. */
-export function claudeDesktopConfig() {
+export function claudeCodeLocalCommand() {
+  return `claude mcp add ${MCP_SERVER_NAME} -- ${NPX_COMMAND}`;
+}
+
+/** Local stdio entry for the npm package; the same JSON works in claude_desktop_config.json and Cursor's mcp.json. */
+export function npxConfig() {
   return JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: { command: "npx", args: ["-y", NPM_PACKAGE] } } }, null, 2);
 }
 

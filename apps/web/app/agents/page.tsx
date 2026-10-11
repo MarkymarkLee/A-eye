@@ -11,11 +11,16 @@ import { AskForm } from "@/components/ask-form";
 import { Reveal } from "@/components/reveal";
 import { formatDistance } from "@/lib/geo";
 import { ConnectAgent } from "@/components/connect-agent";
+import { PLATFORM_FEE_BPS } from "@a-eye/shared";
+import { peekPriceUsd } from "@/lib/payments";
 import {
   MCPB_DOWNLOAD_PATH,
+  NPX_COMMAND,
+  REPO_URL,
   claudeCodeCommand,
-  claudeDesktopConfig,
+  claudeCodeLocalCommand,
   cursorInstallLink,
+  npxConfig,
   mcpUrl,
   vscodeInstallLink,
   windsurfConfig,
@@ -52,7 +57,10 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     cursor: cursorInstallLink(origin),
     vscode: vscodeInstallLink(origin),
     claudeCode: claudeCodeCommand(origin),
-    claudeDesktop: claudeDesktopConfig(),
+    claudeCodeLocal: claudeCodeLocalCommand(),
+    npx: NPX_COMMAND,
+    npxConfig: npxConfig(),
+    repo: REPO_URL,
     windsurf: windsurfConfig(origin),
     mcpb: MCPB_DOWNLOAD_PATH,
   };
@@ -154,10 +162,10 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       <section id="connect" className="mx-auto max-w-[1400px] scroll-mt-20 px-4 pt-20 md:px-6 lg:pt-28">
         <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Connect in one step.</h2>
         <p className="mt-3 max-w-[60ch] text-[16px] leading-relaxed text-muted">
-          A-eye is a hosted MCP server. Point any MCP client at the URL, or run <code className="whitespace-nowrap font-mono text-[15px]">npx -y a-eye-mcp</code>{" "}
-          locally. Same tools either way.
+          Point any MCP client at the hosted URL, or run the npm package{" "}
+          <code className="whitespace-nowrap font-mono text-[15px]">npx -y a-eye-mcp</code> locally. Same tools either way.
         </p>
-        <ConnectAgent links={links} />
+        <ConnectAgent links={links} pricing={{ peekUsd: peekPriceUsd(), winnerPct: (10_000 - PLATFORM_FEE_BPS) / 100 }} />
       </section>
 
       <section id="api" className="mx-auto grid max-w-[1400px] scroll-mt-20 gap-10 px-4 py-20 md:px-6 lg:grid-cols-2 lg:gap-16 lg:py-28">
