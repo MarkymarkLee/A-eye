@@ -7,6 +7,7 @@ import {
   PLATFORM_FEE,
   type CreateQuestionInput,
   type Evidence,
+  type MarketRef,
   type QuestionResults,
   type QuestionStatus,
   type QuestionSummary,
@@ -47,6 +48,7 @@ type QuestionRow = {
   seed: string;
   seed_commit: string;
   web_baseline: string | null;
+  market_ref: string | null;
   closed_at: string | null;
 };
 
@@ -111,7 +113,8 @@ create table if not exists questions (
   web_baseline text,
   payer_address text,
   payment_tx text,
-  refund_tx text
+  refund_tx text,
+  market_ref text
 );
 create index if not exists questions_status_idx on questions(status, closes_at);
 create index if not exists questions_geo_idx on questions(lat, lng);
@@ -146,7 +149,7 @@ const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 /** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
 function migrate(conn: DatabaseSync) {
   const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
-  for (const col of ["payer_address", "payment_tx", "refund_tx"]) {
+  for (const col of ["payer_address", "payment_tx", "refund_tx", "market_ref"]) {
     if (!cols.has(col)) conn.exec(`alter table questions add column ${col} text`);
   }
   if (!cols.has("closed_at")) conn.exec("alter table questions add column closed_at text");
@@ -247,8 +250,8 @@ export function createQuestion(
     .prepare(
       `insert into questions (id, agent_label, prompt, options, allow_free_text, place_label, lat, lng, radius_m,
          prize_amount, currency, min_responses, max_responses, closes_at, created_at, status, seed, seed_commit,
-         payer_address, payment_tx)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
+         payer_address, payment_tx, market_ref)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -269,6 +272,7 @@ export function createQuestion(
       commit,
       payment?.payer ?? null,
       payment?.tx ?? null,
+      input.market_ref ? JSON.stringify(input.market_ref) : null,
     );
   return id;
 }
@@ -305,6 +309,7 @@ function summarize(q: QuestionRow, from?: { lat: number; lng: number }): Questio
     options: JSON.parse(q.options) as string[],
     allow_free_text: q.allow_free_text === 1,
     place_label: q.place_label ?? undefined,
+    market_ref: q.market_ref ? (JSON.parse(q.market_ref) as MarketRef) : undefined,
     lat: q.lat,
     lng: q.lng,
     radius_m: q.radius_m,
