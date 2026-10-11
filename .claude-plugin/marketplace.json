@@ -1,0 +1,16 @@
+{
+  "name": "a-eye",
+  "owner": {
+    "name": "Peyton Li",
+    "url": "https://github.com/PeytonLi"
+  },
+  "description": "A-eye MCP tools for real-world, location-based answers from nearby people.",
+  "plugins": [
+    {
+      "name": "a-eye",
+      "source": "./plugins/a-eye",
+      "description": "Ask nearby people questions and receive fresh photo evidence.",
+      "version": "0.1.0"
+    }
+  ]
+}

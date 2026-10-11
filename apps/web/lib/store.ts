@@ -354,7 +354,7 @@ create table if not exists treasury_transfers (
 );
 `;
 
-const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
+const g = globalThis as unknown as { __aeyeDb?: DatabaseSync; __aeyeTransfersBackfilled?: boolean };
 
 export function applyPendingRestore(file: string): boolean {
   if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
@@ -1195,6 +1195,10 @@ export async function settleDue(): Promise<number> {
       settled += 1;
     }
   }
+  if (!g.__aeyeTransfersBackfilled) {
+    backfillTreasuryTransfers();
+    g.__aeyeTransfersBackfilled = true;
+  }
   retryTreasuryTransfers();
   retryXrplPots();
   return settled;
@@ -1223,6 +1227,71 @@ const winnerEvmAddress = (submissionId: string) =>
       .prepare("select o.evm_address from submissions s join observers o on o.id = s.observer_id where s.id = ?")
       .get(submissionId) as { evm_address: string | null } | undefined
   )?.evm_address ?? undefined;
+
+export function backfillTreasuryTransfers(): number {
+  const conn = db();
+  const now = new Date().toISOString();
+  const insert = conn.prepare(
+    `insert or ignore into treasury_transfers (question_id, kind, to_address, amount_units, updated_at)
+     values (?, ?, ?, ?, ?)`,
+  );
+  let inserted = 0;
+
+  const refunds = conn
+    .prepare(
+      `select q.id, q.payer_address, q.prize_amount
+         from questions q
+        where q.status = 'expired'
+          and q.payment_tx is not null
+          and q.payer_address is not null
+          and q.refund_tx is null
+          and not exists (
+            select 1 from treasury_transfers t where t.question_id = q.id and t.kind = 'refund'
+          )`,
+    )
+    .all() as { id: string; payer_address: string; prize_amount: number }[];
+  for (const question of refunds) {
+    inserted += Number(
+      insert.run(
+        question.id,
+        "refund",
+        question.payer_address,
+        prizeUnits(question.prize_amount).toString(),
+        now,
+      ).changes,
+    );
+  }
+
+  const payouts = conn
+    .prepare(
+      `select q.id, q.prize_amount, r.winner_submission_id
+         from questions q
+         join raffles r on r.question_id = q.id
+        where q.status = 'settled'
+          and q.payment_tx is not null
+          and r.winner_submission_id is not null
+          and r.payout_tx is null
+          and not exists (
+            select 1 from treasury_transfers t where t.question_id = q.id and t.kind = 'payout'
+          )`,
+    )
+    .all() as { id: string; prize_amount: number; winner_submission_id: string }[];
+  for (const question of payouts) {
+    if (escrowRow(question.id) && xrplPayoutAddress(question.winner_submission_id)) continue;
+    inserted += Number(
+      insert.run(
+        question.id,
+        "payout",
+        winnerEvmAddress(question.winner_submission_id) ?? null,
+        winnerPayoutUnits(potAmount(question)).toString(),
+        now,
+      ).changes,
+    );
+  }
+
+  if (inserted > 0) console.info(`[payments] backfilled ${inserted} treasury transfer rows`);
+  return inserted;
+}
 
 /**
  * Everything after the 'closed' claim: expiry refund or raffle + winner payout.
