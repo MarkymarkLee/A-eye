@@ -134,7 +134,6 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   });
 
   it("finds questions when the queried agent label differs only by case", async () => {
-    vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "1");
     const id = store.createQuestion(CreateQuestionInput.parse(question()), "MCP-Agent");
     const mine = await store.questionsByAgent("mcp-agent", "http://a-eye.test");
     expect(mine.map((item) => item.id)).toContain(id);
