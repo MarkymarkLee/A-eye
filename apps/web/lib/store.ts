@@ -1114,11 +1114,11 @@ export function peekRevenue(questionId: string): number {
   const row = db()
     .prepare("select coalesce(sum(amount), 0) as amount from peeks where question_id = ? and payment_tx is not null")
     .get(questionId) as { amount: number };
-  return Math.round(row.amount * 100) / 100;
+  return roundAmount(row.amount);
 }
 
 export function potAmount(question: Pick<QuestionRow, "id" | "prize_amount">): number {
-  return Math.round((question.prize_amount + peekRevenue(question.id)) * 100) / 100;
+  return roundAmount(question.prize_amount + peekRevenue(question.id));
 }
 
 export function recordPeek(questionId: string, payer: string, amountUsd: number, tx: string) {
