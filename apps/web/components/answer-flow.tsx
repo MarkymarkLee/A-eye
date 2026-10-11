@@ -647,7 +647,6 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
 
   useEffect(() => {
     void celebrate();
-    toast.success("You’re entered!", { description: "We’ll show the winner on the results page." });
   }, []);
 
   useEffect(() => {
@@ -689,7 +688,7 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
           {payout(q)} <span className="text-[18px]">{q.currency}</span>
         </p>
         <div className="mt-5 border-t border-dashed border-white/40 pt-3 text-[13px] font-medium opacity-90">
-          Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" /> · 1 of {entries} entries so far
+          Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" /> · {entries === 1 ? "first entry" : `1 of ${entries} entries`}
         </div>
       </motion.div>
 

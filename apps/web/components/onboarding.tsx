@@ -158,7 +158,7 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
 
       <div className="mx-auto w-full max-w-[480px] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mb-5 flex justify-center gap-2" role="tablist" aria-label="Intro steps">
-          {[...STEPS, null].map((_, i) => (
+          {STEPS.map((_, i) => (
             <button
               key={i}
               type="button"
@@ -170,7 +170,7 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
             >
               <motion.span
                 className="block h-2 rounded-full"
-                animate={{ width: i === step ? 28 : 8, backgroundColor: i === step ? "var(--accent)" : "var(--surface-3)" }}
+                animate={{ width: i === step ? 28 : 8, backgroundColor: i === step || last ? "var(--accent)" : "var(--surface-3)" }}
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
               />
             </button>

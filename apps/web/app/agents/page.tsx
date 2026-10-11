@@ -125,7 +125,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       </section>
 
       <section id="api" className="mx-auto grid max-w-[1400px] scroll-mt-20 gap-10 px-4 py-20 md:px-6 lg:grid-cols-2 lg:gap-16 lg:py-28">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Any HTTP agent can ask today.</h2>
           <p className="mt-3 max-w-[56ch] text-[16px] leading-relaxed text-muted">
             Post a question, then poll its results. In local dev it&apos;s free; x402 payment is the next milestone.
@@ -143,7 +143,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
 curl ${origin}/api/questions/<question_id>`}
           </pre>
         </div>
-        <div>
+        <div className="min-w-0">
           <h3 className="text-lg font-semibold tracking-tight">MCP tools</h3>
           <p className="mt-1 text-[14px] text-muted">The stdio server in packages/mcp wraps the same API. In progress.</p>
           <dl className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">

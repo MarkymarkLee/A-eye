@@ -58,6 +58,7 @@ export function QuestionMap({ center, questions, fix, selectedId, onSelect }: Pr
   const dark = useDark();
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
+  const framed = useRef(false);
 
   const render = () => {
     const m = map.current;
@@ -137,6 +138,18 @@ export function QuestionMap({ center, questions, fix, selectedId, onSelect }: Pr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(render, [questions, selectedId, ready]);
 
+  // First view: frame you and the open questions together so every pin is on screen.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || framed.current || !questions.length) return;
+    const pts = questions.filter((q) => q.status === "open");
+    const b = new maplibregl.LngLatBounds();
+    for (const q of pts.length ? pts : questions) b.extend([q.lng, q.lat]);
+    if (fix) b.extend([fix.lng, fix.lat]);
+    framed.current = true;
+    m.fitBounds(b, { padding: { top: 90, bottom: 50, left: 50, right: 70 }, maxZoom: 16.5, duration: 700 });
+  }, [ready, questions, fix]);
+
   // Your position: a live, pulsing indicator with an accuracy halo.
   useEffect(() => {
     const m = map.current;
@@ -150,7 +163,7 @@ export function QuestionMap({ center, questions, fix, selectedId, onSelect }: Pr
         </span>`;
       dot.setAttribute("aria-label", "You are here");
       me.current = new maplibregl.Marker({ element: dot }).setLngLat([fix.lng, fix.lat]).addTo(m);
-      m.easeTo({ center: [fix.lng, fix.lat], duration: 800 });
+      if (!framed.current) m.easeTo({ center: [fix.lng, fix.lat], duration: 800 });
     } else {
       me.current.setLngLat([fix.lng, fix.lat]);
     }
