@@ -102,6 +102,7 @@ export type QuestionSummary = {
   options: string[];
   allow_free_text: boolean;
   place_label?: string;
+  market_ref?: MarketRef;
   lat: number;
   lng: number;
   radius_m: number;
