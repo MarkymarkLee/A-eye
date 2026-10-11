@@ -109,7 +109,7 @@ TypeScript · Next.js 16 · React · Node.js (`node:sqlite`) · SQLite · Tailwi
 
 **Practical use.** When the gap is big enough (15+ points by default, at least 3 answers, and a 0.03 minimum edge), it sizes a small bet with a fractional Kelly stake under hard caps, places a limit order in the sandbox, and cancels anything unfilled. Every decision, including "no trade," is recorded and shown as **Market vs Humans** on the results page and `/live`.
 
-**Sandbox trades.** Filled order `145853902277410438`: `GEMI-SOL2610112200-HI109`, 4 YES @ $0.47. The market implied 41.5% YES; the crowd-adjusted fair value was 70.75%, a 58.5-point divergence (sample output in the README). Discovery currently targets the Crypto and Commodities contracts the sandbox lists.
+**Sandbox trades.** Filled order `145853902277410438`: `GEMI-SOL2610112200-HI109`, 4 YES @ $0.47. The market implied 41.5% YES; the crowd-adjusted fair value was 70.75%, a 58.5-point divergence (sample output in [docs/gemini.md](../gemini.md)). Discovery currently targets the Crypto and Commodities contracts the sandbox lists.
 
 ### Best Use of Ripple (XRPL)
 
@@ -125,7 +125,7 @@ TypeScript · Next.js 16 · React · Node.js (`node:sqlite`) · SQLite · Tailwi
 | Each accepted answer | **MPT** `AEYE` reputation token, non-transferable |
 | After enough accepted answers | **Credentials**: "A-eye Verified Observer" |
 
-**RLUSD.** Winners who pick RLUSD get dollars. The pot is escrowed in XRP and converted to RLUSD through the AMM in the same atomic Batch. Proof: [settlement Batch](https://testnet.xrpl.org/transactions/F145294E73889FD677795FE68A47D6414EE94CE41D0ABDFCB6DBF98C047BF56B). More links are in the README's "Explorer proof (Testnet)" table.
+**RLUSD.** Winners who pick RLUSD get dollars. The pot is escrowed in XRP and converted to RLUSD through the AMM in the same atomic Batch. Proof: [settlement Batch](https://testnet.xrpl.org/transactions/F145294E73889FD677795FE68A47D6414EE94CE41D0ABDFCB6DBF98C047BF56B). More links are in the "Explorer proof (Testnet)" table in [docs/xrpl.md](../xrpl.md).
 
 **Developer feedback.** The README has a full section. In short:
 
