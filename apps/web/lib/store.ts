@@ -16,6 +16,7 @@ import {
   type QuestionStatus,
   type QuestionSummary,
   type RecordMarketTradeInput,
+  type ObserverPrize,
   type WebBaseline,
   type XrplPotInfo,
 } from "@a-eye/shared";
@@ -129,6 +130,18 @@ type RaffleRow = {
   entropy_block_number: number | null;
   winner_submission_id: string | null;
   payout_tx: string | null;
+  winner_notified_at: string | null;
+};
+
+export type PasskeyRecord = {
+  id: string;
+  observer_id: string;
+  public_key: string;
+  counter: number;
+  transports: string | null;
+  wallet_address: string | null;
+  created_at: string;
+  last_used_at: string | null;
 };
 
 export type Observer = {
@@ -269,7 +282,25 @@ create table if not exists raffles (
   entropy_block_hash text not null,
   entropy_block_number integer,
   winner_submission_id text,
-  payout_tx text
+  payout_tx text,
+  winner_notified_at text
+);
+create table if not exists passkeys (
+  id text primary key,
+  observer_id text not null references observers(id),
+  public_key text not null,
+  counter integer not null default 0,
+  transports text,
+  wallet_address text,
+  created_at text not null,
+  last_used_at text
+);
+create index if not exists passkeys_observer_idx on passkeys(observer_id);
+create table if not exists webauthn_challenges (
+  challenge text primary key,
+  purpose text not null,
+  observer_id text,
+  expires_at text not null
 );
 create table if not exists peeks (
   id text primary key,
@@ -387,6 +418,8 @@ function migrate(conn: DatabaseSync) {
   for (const col of ["batch_tx", "fee_tx", "fee_drops", "payout_currency", "payout_amount", "settle_mode"]) {
     if (!escCols.has(col)) conn.exec(`alter table xrpl_escrows add column ${col} text`);
   }
+  const raffleCols = new Set((conn.prepare("pragma table_info(raffles)").all() as { name: string }[]).map((c) => c.name));
+  if (!raffleCols.has("winner_notified_at")) conn.exec("alter table raffles add column winner_notified_at text");
 }
 
 export function db(): DatabaseSync {
@@ -497,6 +530,195 @@ export function updateObserver(
     .prepare("update observers set display_name = ?, evm_address = ?, xrpl_address = ?, payout_rail = ? where id = ?")
     .run(next.display_name, next.evm_address, next.xrpl_address, next.payout_rail, id);
   return getOrCreateObserver(id);
+}
+
+export function savePasskey(input: {
+  id: string;
+  observer_id: string;
+  public_key: string;
+  counter: number;
+  transports?: string[] | null;
+}) {
+  const createdAt = new Date().toISOString();
+  db()
+    .prepare(
+      `insert into passkeys (id, observer_id, public_key, counter, transports, created_at)
+       values (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(input.id, input.observer_id, input.public_key, input.counter, input.transports ? JSON.stringify(input.transports) : null, createdAt);
+  return getPasskey(input.id)!;
+}
+
+export function getPasskey(id: string): PasskeyRecord | undefined {
+  return db().prepare("select * from passkeys where id = ?").get(id) as PasskeyRecord | undefined;
+}
+
+export function passkeysFor(observerId: string): PasskeyRecord[] {
+  return db().prepare("select * from passkeys where observer_id = ? order by created_at").all(observerId) as PasskeyRecord[];
+}
+
+export function touchPasskey(id: string, counter: number): boolean {
+  return db()
+    .prepare("update passkeys set counter = ?, last_used_at = ? where id = ?")
+    .run(counter, new Date().toISOString(), id).changes === 1;
+}
+
+export function setPasskeyWallet(id: string, address: string): boolean {
+  return db().prepare("update passkeys set wallet_address = ? where id = ?").run(address, id).changes === 1;
+}
+
+export function setObserverEvmIfEmpty(observerId: string, address: string): boolean {
+  return (
+    db()
+      .prepare("update observers set evm_address = ? where id = ? and (evm_address is null or evm_address = '')")
+      .run(address, observerId).changes === 1
+  );
+}
+
+export function saveChallenge(
+  challenge: string,
+  purpose: "register" | "login" | "wallet",
+  observerId: string | null,
+  ttlMs = 5 * 60_000,
+) {
+  const now = Date.now();
+  const conn = db();
+  conn.prepare("delete from webauthn_challenges where expires_at <= ?").run(new Date(now).toISOString());
+  conn
+    .prepare("insert into webauthn_challenges (challenge, purpose, observer_id, expires_at) values (?, ?, ?, ?)")
+    .run(challenge, purpose, observerId, new Date(now + ttlMs).toISOString());
+}
+
+export function consumeChallenge(
+  challenge: string,
+  purpose: "register" | "login" | "wallet",
+  observerId: string | null,
+): boolean {
+  const conn = db();
+  conn.exec("begin immediate");
+  try {
+    const now = new Date().toISOString();
+    conn.prepare("delete from webauthn_challenges where expires_at <= ?").run(now);
+    const row = conn
+      .prepare("select purpose, observer_id, expires_at from webauthn_challenges where challenge = ?")
+      .get(challenge) as { purpose: string; observer_id: string | null; expires_at: string } | undefined;
+    if (!row) {
+      conn.exec("commit");
+      return false;
+    }
+    conn.prepare("delete from webauthn_challenges where challenge = ?").run(challenge);
+    conn.exec("commit");
+    return row.purpose === purpose && row.observer_id === observerId && row.expires_at > now;
+  } catch (err) {
+    conn.exec("rollback");
+    throw err;
+  }
+}
+
+/** Merge an anonymous browser into the passkey owner without overwriting answers. */
+export function linkGuestToAccount(guestId: string | undefined, accountId: string): { moved: number; kept: number } {
+  if (!guestId || guestId === accountId) return { moved: 0, kept: 0 };
+  const conn = db();
+  conn.exec("begin immediate");
+  try {
+    const guestExists = conn.prepare("select 1 from observers where id = ?").get(guestId);
+    const account = conn.prepare("select * from observers where id = ?").get(accountId) as Record<string, unknown> | undefined;
+    if (!guestExists || !account) {
+      conn.exec("commit");
+      return { moved: 0, kept: 0 };
+    }
+    if (conn.prepare("select 1 from passkeys where observer_id = ? limit 1").get(guestId)) {
+      conn.exec("commit");
+      return { moved: 0, kept: 0 };
+    }
+    const guestAnswers = conn
+      .prepare("select id, question_id from submissions where observer_id = ?")
+      .all(guestId) as { id: string; question_id: string }[];
+    const moveAnswer = conn.prepare(
+      `update submissions set observer_id = ? where id = ?
+       and not exists (select 1 from submissions where question_id = ? and observer_id = ?)`,
+    );
+    let moved = 0;
+    let kept = 0;
+    for (const answer of guestAnswers) {
+      if (moveAnswer.run(accountId, answer.id, answer.question_id, accountId).changes === 1) moved += 1;
+      else kept += 1;
+    }
+    conn.prepare("update push_subscriptions set observer_id = ? where observer_id = ?").run(accountId, guestId);
+
+    const guest = conn.prepare("select evm_address, xrpl_address, payout_rail from observers where id = ?").get(guestId) as
+      | { evm_address: string | null; xrpl_address: string | null; payout_rail: string }
+      | undefined;
+    if (!account.evm_address && !account.xrpl_address && guest && (guest.evm_address || guest.xrpl_address)) {
+      conn
+        .prepare("update observers set evm_address = ?, xrpl_address = ?, payout_rail = ? where id = ?")
+        .run(guest.evm_address, guest.xrpl_address, guest.payout_rail, accountId);
+    }
+    conn.exec("commit");
+    return { moved, kept };
+  } catch (err) {
+    conn.exec("rollback");
+    throw err;
+  }
+}
+
+export function observerPrizes(observerId: string): ObserverPrize[] {
+  const rows = db()
+    .prepare(
+      `select q.id as question_id, q.prompt, q.place_label, q.prize_amount, q.payment_tx, q.closes_at,
+              q.closed_at, s.captured_at as won_at, t.amount_units, t.to_address, t.state as transfer_state, t.tx as transfer_tx,
+              x.payout_tx as xrpl_tx, x.payout_amount as xrpl_amount, x.question_id as escrow_id, o.evm_address,
+              case when t.question_id is not null then 1 else 0 end as has_transfer
+         from raffles r
+         join submissions s on s.id = r.winner_submission_id
+         join questions q on q.id = r.question_id
+         join observers o on o.id = s.observer_id
+    left join treasury_transfers t on t.question_id = q.id and t.kind = 'payout'
+    left join xrpl_escrows x on x.question_id = q.id
+        where s.observer_id = ? and (q.payment_tx is not null or x.question_id is not null)
+     order by coalesce(q.closed_at, q.closes_at) desc`,
+    )
+    .all(observerId) as Record<string, unknown>[];
+  return rows.map((row) => {
+    const hasTransfer = row.has_transfer === 1;
+    if (!hasTransfer && row.xrpl_tx !== null) {
+      return {
+        question_id: row.question_id as string,
+        prompt: row.prompt as string,
+        place_label: (row.place_label as string | null) ?? null,
+        amount: Number(row.xrpl_amount ?? payoutAmount(potAmount({ id: row.question_id as string, prize_amount: row.prize_amount as number }))),
+        rail: "xrpl" as const,
+        status: "paid" as const,
+        receipt_url: explorerTx(row.xrpl_tx as string),
+        won_at: (row.closed_at as string | null) ?? (row.won_at as string),
+      };
+    }
+    if (!hasTransfer) {
+      // No ledger row yet: an escrowed pot pays on XRPL; otherwise the AUSD payout row is still being created.
+      const rail = row.escrow_id !== null ? ("xrpl" as const) : ("ausd" as const);
+      return {
+        question_id: row.question_id as string,
+        prompt: row.prompt as string,
+        place_label: (row.place_label as string | null) ?? null,
+        amount: payoutAmount(potAmount({ id: row.question_id as string, prize_amount: row.prize_amount as number })),
+        rail,
+        status: "sending" as const,
+        won_at: (row.closed_at as string | null) ?? (row.won_at as string),
+      };
+    }
+    const paid = row.transfer_state === "paid";
+    const waitingForWallet = row.to_address === null && !row.evm_address;
+    return {
+      question_id: row.question_id as string,
+      prompt: row.prompt as string,
+      place_label: (row.place_label as string | null) ?? null,
+      amount: row.amount_units ? Number(row.amount_units) / 1_000_000 : payoutAmount(potAmount({ id: row.question_id as string, prize_amount: row.prize_amount as number })),
+      rail: "ausd" as const,
+      status: paid ? "paid" as const : waitingForWallet ? "needs_wallet" as const : "sending" as const,
+      receipt_url: paid && row.transfer_tx ? explorerTxUrl(row.transfer_tx as string) : undefined,
+      won_at: (row.closed_at as string | null) ?? (row.won_at as string),
+    };
+  });
 }
 
 export function observerEntries(observerId: string) {
@@ -1146,6 +1368,42 @@ export function deletePushSubscription(endpoint: string): boolean {
   return db().prepare("delete from push_subscriptions where endpoint = ?").run(endpoint).changes === 1;
 }
 
+export function pushSubscriptionsFor(observerId: string): PushSubscriptionRecord[] {
+  return db().prepare("select * from push_subscriptions where observer_id = ?").all(observerId) as PushSubscriptionRecord[];
+}
+
+export function claimWinnerNotification(questionId: string, at = new Date().toISOString()): boolean {
+  return (
+    db()
+      .prepare(
+        `update raffles set winner_notified_at = ?
+          where question_id = ? and winner_notified_at is null and winner_submission_id is not null`,
+      )
+      .run(at, questionId).changes === 1
+  );
+}
+
+export function winnerNotificationFor(questionId: string):
+  | { observer_id: string; prompt: string; place_label: string | null; amount: number; is_real_money: boolean }
+  | undefined {
+  const row = db()
+    .prepare(
+      `select s.observer_id, q.prompt, q.place_label
+       from raffles r
+       join submissions s on s.id = r.winner_submission_id
+       join questions q on q.id = r.question_id
+       where r.question_id = ?`,
+    )
+    .get(questionId) as { observer_id: string; prompt: string; place_label: string | null } | undefined;
+  const q = questionById(questionId);
+  if (!row || !q) return undefined;
+  return {
+    ...row,
+    amount: payoutAmount(potAmount(q)),
+    is_real_money: Boolean(q.payment_tx || escrowRow(questionId)),
+  };
+}
+
 /** SQL bounding-box prefilter (same math as nearbyQuestions); exact distance filtering is selectPushTargets. */
 export function pushSubscriptionsNear(lat: number, lng: number, radiusM: number): PushSubscriptionRecord[] {
   const dLat = radiusM / 1000 / 111.32;
@@ -1355,6 +1613,7 @@ async function finishSettlement(id: string) {
     db().exec("rollback");
     throw err;
   }
+  trackWinnerPush(id);
   await processTransfer(id, "payout");
   await settleXrplPot(id);
   trackWebhook(id);
@@ -1384,6 +1643,23 @@ function trackWebhook(id: string) {
 
 export async function flushWebhooks(): Promise<void> {
   await Promise.all([...pendingWebhooks]);
+}
+
+const pendingWinnerPushes = new Set<Promise<void>>();
+
+function trackWinnerPush(questionId: string) {
+  const pending = import("./push")
+    .then(({ notifyWinner }) => notifyWinner(questionId))
+    .then(() => undefined)
+    .catch((err) => {
+      console.warn(`[push] winner notification for ${questionId} failed:`, err);
+    });
+  pendingWinnerPushes.add(pending);
+  void pending.then(() => pendingWinnerPushes.delete(pending));
+}
+
+export async function flushWinnerPushes(): Promise<void> {
+  await Promise.all([...pendingWinnerPushes]);
 }
 
 async function deliverWebhook(id: string): Promise<void> {
@@ -1432,6 +1708,19 @@ function trackTransfer(questionId: string, kind: "payout" | "refund") {
     () => pendingTransfers.delete(pending),
     () => pendingTransfers.delete(pending),
   );
+}
+
+export function retryWinnerPayouts(observerId: string): void {
+  const rows = db()
+    .prepare(
+      `select t.question_id
+         from treasury_transfers t
+         join raffles r on r.question_id = t.question_id
+         join submissions s on s.id = r.winner_submission_id
+        where t.kind = 'payout' and t.to_address is null and s.observer_id = ?`,
+    )
+    .all(observerId) as { question_id: string }[];
+  for (const row of rows) trackTransfer(row.question_id, "payout");
 }
 
 export async function flushTreasuryTransfers(): Promise<void> {
