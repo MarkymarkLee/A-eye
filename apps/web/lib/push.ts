@@ -6,7 +6,7 @@ import {
   deletePushSubscription,
   pushSubscriptionsNear,
 } from "./store";
-import { PUSH_MAX_LOCATION_AGE_MS, PUSH_RADIUS_M, selectPushTargets } from "./push-targets";
+import { isAllowedPushEndpoint, PUSH_MAX_LOCATION_AGE_MS, PUSH_RADIUS_M, selectPushTargets } from "./push-targets";
 
 export function pushConfig() {
   const publicKey = process.env.VAPID_PUBLIC_KEY;
@@ -33,7 +33,7 @@ export async function notifyNearbyQuestion(
       now,
       minIntervalMs: minIntervalMs(),
       maxLocationAgeMs: PUSH_MAX_LOCATION_AGE_MS,
-    });
+    }).filter((sub) => isAllowedPushEndpoint(sub.endpoint));
     const payload = JSON.stringify({
       title: "New question near you",
       body: `${q.prompt} (${q.prize_usd} AUSD prize)`,

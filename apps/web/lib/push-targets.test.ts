@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PUSH_MAX_LOCATION_AGE_MS, PUSH_MIN_INTERVAL_MS, PUSH_RADIUS_M, selectPushTargets } from "./push-targets";
+import { isAllowedPushEndpoint, PUSH_MAX_LOCATION_AGE_MS, PUSH_MIN_INTERVAL_MS, PUSH_RADIUS_M, selectPushTargets } from "./push-targets";
 
 const NOW = Date.parse("2026-01-15T12:00:00Z");
 const Q = { lat: 37.8716, lng: -122.2536 };
@@ -44,5 +44,28 @@ describe("selectPushTargets", () => {
     const at2km = sub({ lat: Q.lat + 0.018 });
     expect(selectPushTargets([at2km], Q, { now: NOW })).toEqual([]);
     expect(selectPushTargets([at2km], Q, { now: NOW, radiusM: 2500 })).toEqual([at2km]);
+  });
+});
+
+describe("isAllowedPushEndpoint", () => {
+  it.each([
+    "https://fcm.googleapis.com/fcm/send/token",
+    "https://sub.android.googleapis.com/path",
+    "https://push.services.mozilla.com/wpush/v2/token",
+    "https://notify.windows.com/w/?token",
+    "https://push.apple.com/3/device/token",
+  ])("allows trusted push endpoint %s", (url) => {
+    expect(isAllowedPushEndpoint(url)).toBe(true);
+  });
+
+  it.each([
+    "https://169.254.169.254/",
+    "https://evilfcm.googleapis.com.attacker.com/",
+    "https://fcm.googleapis.com.evil.com/",
+    "http://fcm.googleapis.com/",
+    "https://user@fcm.googleapis.com/",
+    "https://fcm.googleapis.com:8443/",
+  ])("rejects untrusted push endpoint %s", (url) => {
+    expect(isAllowedPushEndpoint(url)).toBe(false);
   });
 });

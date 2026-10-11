@@ -2,7 +2,8 @@ import "server-only";
 import type { MarketRef } from "@a-eye/shared";
 import type { ActivityCounters, ActivityEvent, ActivityResponse, OpenQuestion } from "./activity-types";
 import { imageUrl } from "./storage";
-import { db, payoutAmount, settleDue } from "./store";
+import { db, payoutAmount, potAmount, settleDue } from "./store";
+import { peekPaywallActive } from "./payments";
 import { tally } from "./tally";
 
 type Row = Record<string, unknown>;
@@ -10,6 +11,7 @@ type Row = Record<string, unknown>;
 const priority: Record<ActivityEvent["type"], number> = {
   question_asked: 1,
   photo: 2,
+  peek: 2.5,
   question_closed: 3,
   raffle_reveal: 4,
   payout: 5,
@@ -48,6 +50,7 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
   const since = opts.since;
   const limit = Math.min(200, Math.max(1, Math.trunc(Number.isFinite(opts.limit) ? opts.limit! : 60)));
   const events: ActivityEvent[] = [];
+  const sealOpenPhotos = peekPaywallActive();
 
   const asked = conn
     .prepare(
@@ -74,7 +77,7 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
 
   const photos = conn
     .prepare(
-      `select s.*, q.prompt, q.place_label, q.options, o.display_name
+      `select s.*, q.prompt, q.place_label, q.options, q.status as qstatus, o.display_name
          from submissions s
          join questions q on q.id = s.question_id
          join observers o on o.id = s.observer_id${whereAfter("s.captured_at", since)}
@@ -84,6 +87,7 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
   for (const row of photos) {
     const options = JSON.parse(row.options as string) as string[];
     const key = row.image_key as string | null;
+    const sealed = sealOpenPhotos && row.qstatus === "open";
     events.push({
       id: `photo:${row.id as string}`,
       type: "photo",
@@ -92,12 +96,37 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
       prompt: row.prompt as string,
       place_label: (row.place_label as string | null) ?? undefined,
       submission_id: row.id as string,
-      answer: options[row.option_index as number]!,
-      free_text: (row.free_text as string | null) ?? undefined,
+      answer: sealed ? "" : options[row.option_index as number]!,
+      ...(sealed ? { sealed: true as const } : {}),
+      free_text: sealed ? undefined : (row.free_text as string | null) ?? undefined,
       distance_m: row.distance_m as number,
       accuracy_m: row.accuracy_m as number,
       observer: row.display_name as string,
       thumb_url: key ? await imageUrl(key, opts.origin) : (row.image_external_url as string),
+    });
+  }
+
+  const peeks = conn
+    .prepare(
+      `select p.*, q.prompt, q.place_label, q.currency
+         from peeks p join questions q on q.id = p.question_id
+        where p.payment_tx is not null${since ? " and p.created_at > ?" : ""}
+        order by p.created_at desc limit ?`,
+    )
+    .all(...argsFor(since, limit)) as Row[];
+  for (const row of peeks) {
+    events.push({
+      id: `peek:${row.id as string}`,
+      type: "peek",
+      at: row.created_at as string,
+      question_id: row.question_id as string,
+      prompt: row.prompt as string,
+      place_label: (row.place_label as string | null) ?? undefined,
+      tx: row.payment_tx as string,
+      amount: Math.round((row.amount as number) * 100) / 100,
+      currency: row.currency as string,
+      payer_address: (row.payer_address as string | null) ?? undefined,
+      responses_at_peek: row.responses_at_peek as number,
     });
   }
 
@@ -180,7 +209,7 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
       prompt: row.prompt as string,
       place_label: (row.place_label as string | null) ?? undefined,
       tx: row.payout_tx as string,
-      amount: payoutAmount(row.prize_amount as number),
+      amount: payoutAmount(potAmount({ id: row.question_id as string, prize_amount: row.prize_amount as number })),
       currency: row.currency as string,
       to_label: (row.winner_observer as string | null) ?? "observer",
     });
@@ -217,21 +246,24 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
               (select count(*) from submissions) as verified_photos,
               (select count(distinct observer_id) from submissions) as unique_observers,
               (select coalesce(sum(prize_amount), 0) from questions where payment_tx is not null) as ausd_bounties,
+              (select coalesce(sum(amount), 0) from peeks where payment_tx is not null) as ausd_peeks,
               (select count(*) from questions where payment_tx is not null) +
                 (select count(*) from raffles where payout_tx is not null) +
-                (select count(*) from questions where refund_tx is not null) as onchain_txs`,
+                (select count(*) from questions where refund_tx is not null) +
+                (select count(*) from peeks where payment_tx is not null) as onchain_txs`,
     )
     .get() as ActivityCounters;
   const payoutPrizes = conn
     .prepare(
-      "select q.prize_amount from raffles r join questions q on q.id = r.question_id where r.payout_tx is not null",
+      "select q.id, q.prize_amount from raffles r join questions q on q.id = r.question_id where r.payout_tx is not null",
     )
-    .all() as { prize_amount: number }[];
-  const paid = payoutPrizes.reduce((sum, row) => sum + payoutAmount(row.prize_amount), 0);
+    .all() as { id: string; prize_amount: number }[];
+  const paid = payoutPrizes.reduce((sum, row) => sum + payoutAmount(potAmount(row)), 0);
   const counters: ActivityCounters = {
     ...counterRow,
     ausd_paid: Math.round(paid * 100) / 100,
     ausd_bounties: Math.round(counterRow.ausd_bounties * 100) / 100,
+    ausd_peeks: Math.round(counterRow.ausd_peeks * 100) / 100,
   };
 
   const openRows = conn

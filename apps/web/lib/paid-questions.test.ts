@@ -1,4 +1,4 @@
-import { AUSD } from "@a-eye/shared";
+import { AUSD, CreateQuestionInput } from "@a-eye/shared";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,9 +10,11 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
-vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd }));
+const transferAusdViaFacilitator = vi.fn();
+vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd, transferAusdViaFacilitator }));
 
 const TREASURY = "0x293214291186180810902D97994c2C72fE88255A";
+const TREASURY_KEY = generatePrivateKey();
 const PAYMENT_TX = `0x${"aa".repeat(32)}`;
 const PAYOUT_TX = `0x${"bb".repeat(32)}`;
 const FACILITATOR = "http://facilitator.test";
@@ -22,7 +24,7 @@ vi.stubEnv("A_EYE_DB_PATH", ":memory:");
 vi.stubEnv("A_EYE_UPLOAD_DIR", mkdtempSync(path.join(tmpdir(), "a-eye-uploads-")));
 vi.stubEnv("NODE_ENV", "production");
 vi.stubEnv("A_EYE_TREASURY_ADDRESS", TREASURY);
-vi.stubEnv("A_EYE_TREASURY_PRIVATE_KEY", generatePrivateKey());
+vi.stubEnv("A_EYE_TREASURY_PRIVATE_KEY", TREASURY_KEY);
 vi.stubEnv("X402_FACILITATOR_URL", FACILITATOR);
 
 // The x402.org facilitator API, emulated over fetch. Everything else (the entropy RPC) is offline.
@@ -44,7 +46,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
-const { POST } = await import("@/app/api/questions/route");
+const { GET, POST } = await import("@/app/api/questions/route");
 const store = await import("./store");
 
 const question = (extra: Record<string, unknown> = {}) => ({
@@ -74,9 +76,11 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   beforeEach(() => {
     transferAusd.mockReset();
     transferAusd.mockResolvedValue(PAYOUT_TX);
+    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "");
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("challenges with a 402 for prize_usd in AUSD paid to the treasury", async () => {
@@ -94,7 +98,30 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   });
 
   it("rejects an invalid question with 400 before asking for payment", async () => {
-    expect((await POST(post({ question: "?" }))).status).toBe(400);
+    const callCount = facilitatorCalls.length;
+    const res = await POST(post(question({ options: ["Yes", "yes "] })));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Invalid question", issues: expect.any(Array) });
+    expect(facilitatorCalls).toHaveLength(callCount);
+  });
+
+  it("rejects an incomplete coordinate filter", async () => {
+    const res = await GET(new Request("http://a-eye.test/api/questions?lat=37.87"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "lat and lng must both be valid coordinates" });
+  });
+
+  it("returns 503 when paid mode has no payment recipient configured", async () => {
+    vi.stubEnv("A_EYE_TREASURY_ADDRESS", "");
+    vi.stubEnv("A_EYE_TREASURY_PRIVATE_KEY", "");
+    const res = await POST(post(question()));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Payments are not configured",
+      message: "x402 payments are not configured on this server",
+    });
+    vi.stubEnv("A_EYE_TREASURY_ADDRESS", TREASURY);
+    vi.stubEnv("A_EYE_TREASURY_PRIVATE_KEY", TREASURY_KEY);
   });
 
   it("creates the question after verify + settle, stores it under the payer and returns payment_tx", async () => {
@@ -104,6 +131,12 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
     expect(facilitatorCalls).toEqual(expect.arrayContaining(["/supported", "/verify", "/settle"]));
     const mine = await store.questionsByAgent(agent.address, "http://a-eye.test");
     expect(mine.map((q) => q.id)).toContain(body.question_id);
+  });
+
+  it("finds questions when the queried agent label differs only by case", async () => {
+    const id = store.createQuestion(CreateQuestionInput.parse(question()), "MCP-Agent");
+    const mine = await store.questionsByAgent("mcp-agent", "http://a-eye.test");
+    expect(mine.map((item) => item.id)).toContain(id);
   });
 
   it("refunds the payer when a paid question expires without enough answers", async () => {

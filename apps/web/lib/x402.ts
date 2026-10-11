@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { AUSD, X402_NETWORK } from "@a-eye/shared";
 import {
   decodePaymentSignatureHeader,
@@ -48,9 +49,10 @@ export interface X402Options<Body = unknown> {
 export class X402InputError extends Error {}
 
 const servers = new WeakMap<FacilitatorClient, Promise<x402ResourceServer>>();
+const usedAuthorizations = new Map<string, number>();
 let defaultFacilitator: FacilitatorClient | undefined;
 
-function facilitatorFromEnv(): FacilitatorClient {
+export function facilitatorFromEnv(): FacilitatorClient {
   defaultFacilitator ??= new HTTPFacilitatorClient({ url: process.env.X402_FACILITATOR_URL || DEFAULT_FACILITATOR_URL });
   return defaultFacilitator;
 }
@@ -95,15 +97,17 @@ export function withX402Payment<Body = unknown>(handler: PaidHandler, options: X
     try {
       server = await resourceServer(facilitator);
     } catch (err) {
-      return json({ error: "facilitator_unavailable", message: String(err) }, 502);
+      console.error("[x402] facilitator unavailable:", err);
+      return json({ error: "facilitator_unavailable", message: "Payment facilitator unavailable" }, 502);
     }
 
+    const maxTimeoutSeconds = options.maxTimeoutSeconds ?? 300;
     const [requirements] = await server.buildPaymentRequirements({
       scheme: "exact",
       network: X402_NETWORK,
       payTo,
       price: { asset: AUSD.address, amount: amountUnits.toString(), extra: { ...AUSD.eip712 } },
-      maxTimeoutSeconds: options.maxTimeoutSeconds ?? 300,
+      maxTimeoutSeconds,
     });
     if (!requirements) return json({ error: "payments_unconfigured", message: "No payment requirements" }, 500);
 
@@ -131,12 +135,28 @@ export function withX402Payment<Body = unknown>(handler: PaidHandler, options: X
     const matched = server.findMatchingRequirements([requirements], payload);
     if (!matched) return challenge("Payment does not match the requirements");
 
+    const authorization = payload.payload?.authorization as { from?: string; nonce?: string } | undefined;
+    const payer = authorization?.from ?? "";
+    const nonce = authorization?.nonce ?? createHash("sha256").update(header).digest("hex");
+    const replayKey = `${payer}:${nonce}`;
+    const now = Date.now();
+    for (const [key, expiresAt] of usedAuthorizations) {
+      if (expiresAt <= now) usedAuthorizations.delete(key);
+    }
+    if ((usedAuthorizations.get(replayKey) ?? 0) > now) {
+      return challenge("Payment authorization already used");
+    }
+    usedAuthorizations.set(replayKey, now + 2 * maxTimeoutSeconds * 1000);
+
     const verify = await server.verifyPayment(payload, matched).catch((err: unknown) => ({
       isValid: false,
       invalidReason: err instanceof Error ? err.message : String(err),
       payer: undefined,
     }));
-    if (!verify.isValid) return challenge(verify.invalidReason ?? "Payment verification failed");
+    if (!verify.isValid) {
+      usedAuthorizations.delete(replayKey);
+      return challenge(verify.invalidReason ?? "Payment verification failed");
+    }
 
     const ctx: PaymentContext = {
       payer: (verify.payer ?? "0x") as Hex,
@@ -155,7 +175,10 @@ export function withX402Payment<Body = unknown>(handler: PaidHandler, options: X
           network: X402_NETWORK,
         }),
       );
-      if (!res.success) return challenge(res.errorReason ?? "Payment settlement failed");
+      if (!res.success) {
+        usedAuthorizations.delete(replayKey);
+        return challenge(res.errorReason ?? "Payment settlement failed");
+      }
       ctx.txHash = res.transaction as Hex;
       if (res.payer) ctx.payer = res.payer as Hex;
       return res;
@@ -182,8 +205,17 @@ export function withX402Payment<Body = unknown>(handler: PaidHandler, options: X
       return withReceipt(response, receipt);
     }
 
-    const response = await handler(rebuild(req, text), { ...ctx });
-    if (response.status >= 400) return response;
+    let response: Response;
+    try {
+      response = await handler(rebuild(req, text), { ...ctx });
+    } catch (error) {
+      usedAuthorizations.delete(replayKey);
+      throw error;
+    }
+    if (response.status >= 400) {
+      usedAuthorizations.delete(replayKey);
+      return response;
+    }
     const receipt = await settle();
     if (receipt instanceof Response) return receipt;
     return withReceipt(response, receipt);
