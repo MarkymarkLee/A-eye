@@ -32,6 +32,7 @@ afterAll(() => {
   rmSync(uploadDir, { recursive: true, force: true });
 });
 
+const { FacilitatorNotSubmittedError } = await import("./chain");
 const store = await import("./store");
 const { activity } = await import("./activity");
 const { raffleSnippet } = await import("./raffle-snippet");
@@ -80,7 +81,7 @@ describe("activity feed", () => {
   beforeEach(() => {
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "1");
     transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
-    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
+    transferAusdViaFacilitator.mockReset().mockRejectedValue(new FacilitatorNotSubmittedError("facilitator unavailable"));
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});

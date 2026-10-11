@@ -134,10 +134,29 @@ export async function rebroadcastRawTx(raw: Hex): Promise<"ok" | "nonce_used"> {
   }
 }
 
+export class FacilitatorNotSubmittedError extends Error {}
+
+const AUTHORIZATION_USED_EVENT = {
+  type: "event",
+  name: "AuthorizationUsed",
+  inputs: [
+    { name: "authorizer", type: "address", indexed: true },
+    { name: "nonce", type: "bytes32", indexed: true },
+  ],
+} as const;
+
+/**
+ * Gasless AUSD payout: the treasury signs an EIP-3009 authorization and the x402
+ * facilitator settles it. Errors before client.settle() is invoked are rethrown as
+ * FacilitatorNotSubmittedError (nothing was submitted; a direct rail send is safe).
+ * `hooks.onAuthorized` runs synchronously once the authorization exists — persist it;
+ * after `validBefore` passes an unused authorization can never land.
+ */
 export async function transferAusdViaFacilitator(
   to: string,
   amountUnits: bigint,
   facilitator?: FacilitatorClient,
+  hooks?: { onAuthorized?: (a: { nonce: Hex; validBefore: number }) => void },
 ): Promise<Hex> {
   if (!isAddress(to)) throw new Error(`Invalid recipient address: ${to}`);
   if (amountUnits <= BigInt(0)) throw new Error("Amount must be positive");
@@ -150,21 +169,32 @@ export async function transferAusdViaFacilitator(
     maxTimeoutSeconds: 300,
     extra: { ...AUSD.eip712 },
   };
-  const partial = await new ExactEvmScheme(treasuryAccount()).createPaymentPayload(2, requirements);
-  const payload: PaymentPayload = {
-    ...partial,
-    accepted: requirements,
-    resource: {
-      url: `${process.env.A_EYE_PUBLIC_URL ?? "https://a-eye-1zsv.onrender.com"}/payouts`,
-      description: "A-eye treasury payout",
-      mimeType: "application/json",
-    },
-  };
-  const client = facilitator ?? facilitatorFromEnv();
-  const verified = await client.verify(payload, requirements);
-  if (!verified.isValid) {
-    const reason = [verified.invalidReason, verified.invalidMessage].filter(Boolean).join(": ");
-    throw new Error(reason || "Facilitator rejected treasury payout");
+  let client: FacilitatorClient;
+  let payload: PaymentPayload;
+  try {
+    const partial = await new ExactEvmScheme(treasuryAccount()).createPaymentPayload(2, requirements);
+    const authorization = (
+      partial.payload as { authorization: { nonce: Hex; validBefore: number | bigint | string } }
+    ).authorization;
+    hooks?.onAuthorized?.({ nonce: authorization.nonce, validBefore: Number(authorization.validBefore) });
+    payload = {
+      ...partial,
+      accepted: requirements,
+      resource: {
+        url: `${process.env.A_EYE_PUBLIC_URL ?? "https://a-eye-1zsv.onrender.com"}/payouts`,
+        description: "A-eye treasury payout",
+        mimeType: "application/json",
+      },
+    };
+    client = facilitator ?? facilitatorFromEnv();
+    const verified = await client.verify(payload, requirements);
+    if (!verified.isValid) {
+      const reason = [verified.invalidReason, verified.invalidMessage].filter(Boolean).join(": ");
+      throw new Error(reason || "Facilitator rejected treasury payout");
+    }
+  } catch (err) {
+    if (err instanceof FacilitatorNotSubmittedError) throw err;
+    throw new FacilitatorNotSubmittedError(err instanceof Error ? err.message : String(err));
   }
   const settled = await client.settle(payload, requirements);
   if (!settled.success) {
@@ -172,4 +202,43 @@ export async function transferAusdViaFacilitator(
     throw new Error(reason || "Facilitator failed to settle treasury payout");
   }
   return settled.transaction as Hex;
+}
+
+/** Whether an EIP-3009 authorization nonce from the treasury has been used on-chain. */
+export function ausdAuthorizationUsed(nonce: Hex): Promise<boolean> {
+  return publicClient().readContract({
+    address: AUSD.address,
+    abi: [
+      {
+        type: "function",
+        name: "authorizationState",
+        stateMutability: "view",
+        inputs: [
+          { name: "authorizer", type: "address" },
+          { name: "nonce", type: "bytes32" },
+        ],
+        outputs: [{ name: "", type: "bool" }],
+      },
+    ],
+    functionName: "authorizationState",
+    args: [treasuryAccount().address, nonce],
+  });
+}
+
+/** Find the tx that consumed a treasury authorization nonce, scanning recent blocks. */
+export async function findAuthorizationTx(nonce: Hex, fromBlock: bigint | null): Promise<Hex | undefined> {
+  const latest = await publicClient().getBlockNumber();
+  const start = fromBlock ?? (latest > 5000n ? latest - 5000n : 0n);
+  const logs = await publicClient().getLogs({
+    address: AUSD.address,
+    event: AUTHORIZATION_USED_EVENT,
+    args: { authorizer: treasuryAccount().address, nonce },
+    fromBlock: start < 0n ? 0n : start,
+    toBlock: latest,
+  });
+  return logs[0]?.transactionHash;
+}
+
+export function currentBlockNumber(): Promise<bigint> {
+  return publicClient().getBlockNumber();
 }

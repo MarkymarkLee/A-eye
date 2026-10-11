@@ -1,7 +1,11 @@
 import { toBaseUnits, winnerPayout } from "@a-eye/shared";
 import {
+  ausdAuthorizationUsed,
   ausdTxStatus,
+  currentBlockNumber,
   explorerTxUrl,
+  FacilitatorNotSubmittedError,
+  findAuthorizationTx,
   isTreasuryConfigured,
   transferAusd,
   transferAusdViaFacilitator,
@@ -64,31 +68,83 @@ export type TreasuryTransfer =
   | { status: "confirmed"; tx: string }
   | { status: "skipped"; reason: "treasury_not_configured" | "no_recipient" | "zero_amount" }
   | { status: "failed"; error: string } // nothing mined; safe to sign a new tx
-  | { status: "unconfirmed"; tx: string; error: string };
+  | { status: "unconfirmed"; tx: string; error: string }
+  | { status: "unconfirmed_authorization"; nonce: string; error: string };
 
 /**
  * Ledger-backed variant of sendFromTreasury: reports exactly what happened so the
- * caller can persist retries. `onSigned` runs before broadcast (persist the hash+raw
- * there). Never throws.
+ * caller can persist retries. Tries the gasless facilitator rail first (unless
+ * A_EYE_PAYOUT_RAIL=direct); `onAuthorized`/`onSigned` run before anything can land
+ * on-chain so the ledger can persist the nonce or the hash+raw. Never throws.
  */
 export async function transferFromTreasury(
   kind: "payout" | "refund",
   to: string | null | undefined,
   amountUnits: bigint,
-  onSigned?: (tx: { hash: `0x${string}`; raw: `0x${string}` }) => void,
+  hooks?: {
+    onSigned?: (tx: { hash: `0x${string}`; raw: `0x${string}` }) => void;
+    onAuthorized?: (a: { nonce: `0x${string}`; validBefore: number; fromBlock: string | null }) => void;
+  },
 ): Promise<TreasuryTransfer> {
   if (!to) return { status: "skipped", reason: "no_recipient" };
   if (amountUnits <= BigInt(0)) return { status: "skipped", reason: "zero_amount" };
   if (!isTreasuryConfigured()) return { status: "skipped", reason: "treasury_not_configured" };
+
+  if (process.env.A_EYE_PAYOUT_RAIL !== "direct") {
+    let fromBlock: string | null = null;
+    try {
+      fromBlock = (await currentBlockNumber()).toString();
+    } catch {
+      // Scan back from latest instead when recovering this authorization.
+    }
+    let nonce: `0x${string}` | undefined;
+    try {
+      const tx = await transferAusdViaFacilitator(to, amountUnits, undefined, {
+        onAuthorized: (a) => {
+          nonce = a.nonce;
+          hooks?.onAuthorized?.({ nonce: a.nonce, validBefore: a.validBefore, fromBlock });
+        },
+      });
+      console.info(`[payments] ${kind} via facilitator ${amountUnits} AUSD units to ${to}: ${explorerTxUrl(tx)}`);
+      return { status: "confirmed", tx };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof FacilitatorNotSubmittedError) {
+        console.warn(`[payments] ${kind} facilitator rail skipped (${message}); trying direct`);
+        // Nothing was submitted: fall through to the direct rail below.
+      } else {
+        // Ambiguous: the facilitator may have broadcast the authorization.
+        if (nonce) {
+          try {
+            if (await ausdAuthorizationUsed(nonce)) {
+              const tx = await findAuthorizationTx(
+                nonce,
+                fromBlock !== null ? BigInt(fromBlock) : null,
+              );
+              if (tx) {
+                console.info(`[payments] ${kind} authorization landed: ${explorerTxUrl(tx)}`);
+                return { status: "confirmed", tx };
+              }
+            }
+          } catch {
+            // Can't confirm either way; report as unconfirmed.
+          }
+        }
+        console.error(`[payments] ${kind} to ${to} unconfirmed authorization${nonce ? ` (${nonce})` : ""}:`, message);
+        return { status: "unconfirmed_authorization", nonce: nonce ?? "", error: message };
+      }
+    }
+  }
+
   let signedHash: `0x${string}` | undefined;
   try {
     const tx = await transferAusd(to, amountUnits, {
       onSigned: ({ hash, raw }) => {
         signedHash = hash;
-        onSigned?.({ hash, raw });
+        hooks?.onSigned?.({ hash, raw });
       },
     });
-    console.info(`[payments] ${kind} ${amountUnits} AUSD units to ${to}: ${explorerTxUrl(tx)}`);
+    console.info(`[payments] ${kind} via direct rail ${amountUnits} AUSD units to ${to}: ${explorerTxUrl(tx)}`);
     return { status: "confirmed", tx };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

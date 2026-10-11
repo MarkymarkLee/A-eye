@@ -37,7 +37,14 @@ import {
   type ObserverStats,
   type WinRow,
 } from "./reputation";
-import { ausdTxStatus, explorerTxUrl, isTreasuryConfigured, rebroadcastRawTx } from "./chain";
+import {
+  ausdAuthorizationUsed,
+  ausdTxStatus,
+  explorerTxUrl,
+  findAuthorizationTx,
+  isTreasuryConfigured,
+  rebroadcastRawTx,
+} from "./chain";
 import {
   XrplError,
   cancelEscrow,
@@ -130,6 +137,10 @@ type TreasuryTransferRow = {
   state: "pending" | "sending" | "sent" | "failed" | "paid";
   tx: string | null;
   raw_tx: string | null;
+  rail: "facilitator" | "direct" | null;
+  auth_nonce: string | null;
+  auth_valid_before: number | null;
+  from_block: string | null;
   attempts: number;
   last_error: string | null;
   updated_at: string;
@@ -268,6 +279,10 @@ create table if not exists treasury_transfers (
   amount_units text not null,
   state text not null default 'pending', -- pending | sending | sent | failed | paid
   tx text, raw_tx text,
+  rail text,                 -- 'facilitator' | 'direct'
+  auth_nonce text,           -- EIP-3009 nonce when sent via the facilitator rail
+  auth_valid_before integer, -- unix seconds; an unused nonce is dead after this
+  from_block text,           -- block height when the authorization was signed
   attempts integer not null default 0,
   last_error text,
   updated_at text not null,
@@ -1230,18 +1245,56 @@ async function runTransfer(questionId: string, kind: "payout" | "refund"): Promi
   if (claim.changes !== 1) return;
 
   const claimed = transferRow(questionId, kind)!;
-  if (claimed.raw_tx && claimed.tx) {
+  if (claimed.auth_nonce) {
+    // A facilitator authorization may have been broadcast; check before signing anew.
+    try {
+      const used = await ausdAuthorizationUsed(claimed.auth_nonce as `0x${string}`);
+      if (used) {
+        const tx = await findAuthorizationTx(
+          claimed.auth_nonce as `0x${string}`,
+          claimed.from_block !== null ? BigInt(claimed.from_block) : null,
+        );
+        if (tx) {
+          markPaid(questionId, kind, tx);
+          return;
+        }
+        db()
+          .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+          .run("authorization used; tx not found yet", nowIso(), questionId, kind);
+        return;
+      }
+      // Past validBefore + grace an unused authorization can never land: sign a fresh one.
+      if (Math.floor(Date.now() / 1000) > (claimed.auth_valid_before ?? 0) + 30) {
+        db()
+          .prepare("update treasury_transfers set auth_nonce = null, auth_valid_before = null, from_block = null where question_id = ? and kind = ?")
+          .run(questionId, kind);
+      } else {
+        db()
+          .prepare("update treasury_transfers set state = 'sent', updated_at = ? where question_id = ? and kind = ?")
+          .run(nowIso(), questionId, kind);
+        return;
+      }
+    } catch (err) {
+      db()
+        .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+        .run(err instanceof Error ? err.message : String(err), nowIso(), questionId, kind);
+      return;
+    }
+  }
+
+  const fresh = transferRow(questionId, kind)!;
+  if (fresh.raw_tx && fresh.tx) {
     // A previous attempt may have broadcast; check before signing anything new.
-    const status = await ausdTxStatus(claimed.tx as `0x${string}`);
+    const status = await ausdTxStatus(fresh.tx as `0x${string}`);
     if (status === "success") {
-      markPaid(questionId, kind, claimed.tx);
+      markPaid(questionId, kind, fresh.tx);
       return;
     }
     if (status === "reverted") {
       db().prepare("update treasury_transfers set tx = null, raw_tx = null where question_id = ? and kind = ?").run(questionId, kind);
     } else {
       try {
-        const resend = await rebroadcastRawTx(claimed.raw_tx as `0x${string}`);
+        const resend = await rebroadcastRawTx(fresh.raw_tx as `0x${string}`);
         if (resend === "ok") {
           db()
             .prepare("update treasury_transfers set state = 'sent', updated_at = ? where question_id = ? and kind = ?")
@@ -1249,9 +1302,9 @@ async function runTransfer(questionId: string, kind: "payout" | "refund"): Promi
           return;
         }
         // nonce_used: the original may still have landed; check once, else sign fresh.
-        const again = await ausdTxStatus(claimed.tx as `0x${string}`);
+        const again = await ausdTxStatus(fresh.tx as `0x${string}`);
         if (again === "success") {
-          markPaid(questionId, kind, claimed.tx);
+          markPaid(questionId, kind, fresh.tx);
           return;
         }
         db().prepare("update treasury_transfers set tx = null, raw_tx = null where question_id = ? and kind = ?").run(questionId, kind);
@@ -1264,13 +1317,26 @@ async function runTransfer(questionId: string, kind: "payout" | "refund"): Promi
     }
   }
 
-  const result = await transferFromTreasury(kind, claimed.to_address, BigInt(claimed.amount_units), ({ hash, raw }) =>
-    db()
-      .prepare("update treasury_transfers set tx = ?, raw_tx = ?, updated_at = ? where question_id = ? and kind = ?")
-      .run(hash, raw, nowIso(), questionId, kind),
-  );
+  const result = await transferFromTreasury(kind, fresh.to_address, BigInt(fresh.amount_units), {
+    onSigned: ({ hash, raw }) =>
+      db()
+        .prepare(
+          "update treasury_transfers set tx = ?, raw_tx = ?, rail = 'direct', auth_nonce = null, auth_valid_before = null, from_block = null, updated_at = ? where question_id = ? and kind = ?",
+        )
+        .run(hash, raw, nowIso(), questionId, kind),
+    onAuthorized: (a) =>
+      db()
+        .prepare(
+          "update treasury_transfers set rail = 'facilitator', auth_nonce = ?, auth_valid_before = ?, from_block = ?, updated_at = ? where question_id = ? and kind = ?",
+        )
+        .run(a.nonce, a.validBefore, a.fromBlock, nowIso(), questionId, kind),
+  });
   if (result.status === "confirmed") {
     markPaid(questionId, kind, result.tx);
+  } else if (result.status === "unconfirmed_authorization") {
+    db()
+      .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+      .run(result.error, nowIso(), questionId, kind);
   } else if (result.status === "failed") {
     db()
       .prepare("update treasury_transfers set state = 'failed', tx = null, raw_tx = null, last_error = ?, updated_at = ? where question_id = ? and kind = ?")

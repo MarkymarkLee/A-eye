@@ -46,6 +46,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
+const { FacilitatorNotSubmittedError } = await import("./chain");
 const { GET, POST } = await import("@/app/api/questions/route");
 const store = await import("./store");
 
@@ -76,7 +77,10 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   beforeEach(() => {
     transferAusd.mockReset();
     transferAusd.mockResolvedValue(PAYOUT_TX);
-    transferAusdViaFacilitator.mockReset().mockRejectedValue(new Error("facilitator unavailable"));
+    // Payouts fall back to the direct rail when the facilitator can't submit.
+    transferAusdViaFacilitator
+      .mockReset()
+      .mockRejectedValue(new FacilitatorNotSubmittedError("facilitator offline"));
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "");
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -14,11 +14,19 @@ vi.mock("node:dns", () => ({
 const transferAusd = vi.fn();
 const ausdTxStatus = vi.fn();
 const rebroadcastRawTx = vi.fn();
+const transferAusdViaFacilitator = vi.fn();
+const ausdAuthorizationUsed = vi.fn();
+const findAuthorizationTx = vi.fn();
+const currentBlockNumber = vi.fn();
 vi.mock("./chain", async (orig) => ({
   ...(await orig<typeof import("./chain")>()),
   transferAusd,
   ausdTxStatus,
   rebroadcastRawTx,
+  transferAusdViaFacilitator,
+  ausdAuthorizationUsed,
+  findAuthorizationTx,
+  currentBlockNumber,
 }));
 
 vi.stubEnv("A_EYE_DB_PATH", ":memory:");
@@ -44,6 +52,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
+const { FacilitatorNotSubmittedError } = await import("./chain");
 const store = await import("./store");
 const { raffleSnippet } = await import("./raffle-snippet");
 const { prizeUnits, winnerPayoutUnits } = await import("./payments");
@@ -95,10 +104,21 @@ const transfers = (questionId: string) =>
     unknown
   >[];
 
+const NONCE = `0x${"77".repeat(32)}` as `0x${string}`;
+const FACILITATOR_TX = `0x${"99".repeat(32)}`;
+
 beforeEach(() => {
   transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
   ausdTxStatus.mockReset().mockResolvedValue("missing");
   rebroadcastRawTx.mockReset().mockResolvedValue("ok");
+  // Default: facilitator rail can't submit (the no-gas reality), so tests exercise fallback-to-direct.
+  transferAusdViaFacilitator
+    .mockReset()
+    .mockRejectedValue(new FacilitatorNotSubmittedError("offline"));
+  ausdAuthorizationUsed.mockReset().mockResolvedValue(false);
+  findAuthorizationTx.mockReset().mockResolvedValue(undefined);
+  currentBlockNumber.mockReset().mockResolvedValue(100n);
+  vi.stubEnv("A_EYE_PAYOUT_RAIL", "");
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -428,6 +448,123 @@ describe("core loop correctness", () => {
     }
     expect(CreateQuestionInput.safeParse({ ...base, options: ["Yes", "yes"] }).success).toBe(false);
     expect(CreateQuestionInput.safeParse({ ...base, options: [" Yes ", "yes"] }).success).toBe(false);
+  });
+
+  it("pays via the facilitator rail without touching transferAusd", async () => {
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `fac-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000ee",
+    });
+    transferAusdViaFacilitator.mockImplementation(async (_to, _units, _fac, hooks) => {
+      hooks?.onAuthorized?.({ nonce: NONCE, validBefore: Math.floor(Date.now() / 1000) + 300 });
+      return FACILITATOR_TX;
+    });
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(1);
+    expect(transferAusd).not.toHaveBeenCalled();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX, rail: "facilitator" });
+    expect((await store.getResults(id, "http://a-eye.test"))!.raffle.payout_tx).toBe(FACILITATOR_TX);
+  });
+
+  it("A_EYE_PAYOUT_RAIL=direct skips the facilitator rail", async () => {
+    vi.stubEnv("A_EYE_PAYOUT_RAIL", "direct");
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `dir-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000ee",
+    });
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transferAusdViaFacilitator).not.toHaveBeenCalled();
+    expect(transferAusd).toHaveBeenCalledTimes(1);
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: PAYOUT_TX });
+  });
+
+  it("recovers an authorization the facilitator may have broadcast", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `auth-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000ee",
+    });
+    const validBefore = Math.floor(Date.now() / 1000) + 300;
+    transferAusdViaFacilitator.mockImplementation(async (_to, _units, _fac, hooks) => {
+      hooks?.onAuthorized?.({ nonce: NONCE, validBefore });
+      throw new Error("timeout");
+    });
+
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({
+      state: "sent",
+      rail: "facilitator",
+      auth_nonce: NONCE,
+      auth_valid_before: validBefore,
+    });
+    expect(transferAusd).not.toHaveBeenCalled();
+
+    // Sweep while the authorization is still live: nothing new is signed.
+    vi.setSystemTime(Date.now() + 31_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(1);
+    expect(transferAusd).not.toHaveBeenCalled();
+    expect(transfers(id)[0]).toMatchObject({ state: "sent" });
+
+    // The authorization lands later: the tx hash is recovered from the event log.
+    vi.setSystemTime(Date.now() + 31_000);
+    ausdAuthorizationUsed.mockResolvedValue(true);
+    findAuthorizationTx.mockResolvedValue(FACILITATOR_TX);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(1);
+    expect(transferAusd).not.toHaveBeenCalled();
+    expect((await store.getResults(id, "http://a-eye.test"))!.raffle.payout_tx).toBe(FACILITATOR_TX);
+  });
+
+  it("signs a fresh authorization only after the old one is dead", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `dead-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000ee",
+    });
+    const validBefore = Math.floor(Date.now() / 1000) + 300;
+    transferAusdViaFacilitator.mockImplementationOnce(async (_to, _units, _fac, hooks) => {
+      hooks?.onAuthorized?.({ nonce: NONCE, validBefore });
+      throw new Error("timeout");
+    });
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({ state: "sent", auth_nonce: NONCE });
+
+    // validBefore + grace passes with the nonce still unused -> exactly one new attempt.
+    vi.setSystemTime(Date.now() + 331_000);
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(2);
+    expect(transferAusd).not.toHaveBeenCalled();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+  });
+
+  it("no-gas reality: facilitator down + direct out of gas fails, a later facilitator retry pays", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `gas-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000ee",
+    });
+    transferAusd.mockRejectedValue(new Error("insufficient funds for gas"));
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({ state: "failed", attempts: 1 });
+    expect((await store.getResults(id, "http://a-eye.test"))!.raffle.payout_status).toBe("failed");
+
+    vi.setSystemTime(Date.now() + 61_000);
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+    expect(transferAusd).toHaveBeenCalledTimes(1);
   });
 
   it("a hanging webhook does not block closeNow and is recorded failed", async () => {
