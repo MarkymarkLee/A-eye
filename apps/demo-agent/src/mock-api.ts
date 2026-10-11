@@ -120,6 +120,7 @@ export function startMockApi(opts: MockOptions = {}): Promise<{ server: Server; 
         accuracy_m: s.accuracy_m,
         captured_at: s.captured_at,
         observer: s.observer,
+        observer_reputation: { agreement_rate: 0.8, scored_answers: 5, answer_count: 9 },
       })),
       gallery_url: `${origin}/q/${q.id}`,
       market_ref: q.market_ref ?? null,

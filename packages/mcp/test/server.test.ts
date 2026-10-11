@@ -16,7 +16,14 @@ const results = (status: "open" | "closed") => ({
   ],
   gallery_url: `${BASE}/q/q1`,
   evidence: [
-    { answer: "Yes", free_text: null, image_url: `${BASE}/img/1.jpg`, distance_m: 12, captured_at: "2026-10-11T20:00:00.000Z" },
+    {
+      answer: "Yes",
+      free_text: null,
+      image_url: `${BASE}/img/1.jpg`,
+      distance_m: 12,
+      captured_at: "2026-10-11T20:00:00.000Z",
+      observer_reputation: { agreement_rate: 0.8, scored_answers: 5, answer_count: 9 },
+    },
   ],
   web_baseline: null,
   raffle: { winner: null, payout_tx: null, seed_commit: "ab", seed_reveal: null, entropy_block_hash: null },
@@ -77,6 +84,21 @@ describe("a-eye MCP server", () => {
     expect(calls).toBe(3);
     const content = res.content as Array<{ type: string; mimeType?: string; data?: string }>;
     expect(content.find((c) => c.type === "image")).toMatchObject({ mimeType: "image/jpeg", data: "AQID" });
+  });
+
+  it("annotates evidence with observer_reputation and the agreement caption", async () => {
+    const client = await connect(async (url) => {
+      if (url.endsWith("/img/1.jpg")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
+      return Response.json(results("closed"));
+    });
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
+    expect(res.isError).toBeFalsy();
+    const content = res.content as Array<{ type: string; text?: string }>;
+    const parsed = JSON.parse(content[0]!.text!) as { evidence: { observer_reputation?: unknown }[] };
+    expect(parsed.evidence[0]!.observer_reputation).toEqual({ agreement_rate: 0.8, scored_answers: 5, answer_count: 9 });
+    expect(content.find((c) => c.text?.includes("Evidence #1"))!.text).toContain(
+      "observer agreed with the crowd 80% of the time on 5 closed questions (9 answers)",
+    );
   });
 
   it("surfaces API errors as tool errors", async () => {

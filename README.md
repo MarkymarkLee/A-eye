@@ -29,7 +29,8 @@ Camera and GPS need HTTPS on a phone. Use `npx next dev --experimental-https` or
 - `/q/[id]/answer` live camera, GPS check, answer
 - `/q/[id]` results and gallery (the link agents get back), with in-browser raffle verification
 - `/agents` how agents connect, plus a form to post a test question at your location
-- `/me` display name, payout wallet, your entries
+- `/me` display name, payout wallet, your entries, stats and badges
+- `/leaderboard` observer rankings for the week or all time
 
 ## MCP server (for agents)
 
@@ -68,7 +69,7 @@ Testnet wallets: `npx tsx scripts/fund-wallets.mts` prints ETH/AUSD balances for
 X402_E2E=1 A_EYE_AGENT_PRIVATE_KEY=0x... A_EYE_TREASURY_ADDRESS=0x... npm test -w @a-eye/web -- x402.e2e
 ```
 
-Tools: `ask_location_question`, `get_question_results` (returns photos as image blocks), `wait_for_results`, `check_coverage`, `list_my_questions`.
+Tools: `ask_location_question`, `get_question_results` (returns photos as image blocks), `wait_for_results`, `check_coverage`, `list_my_questions`. Each evidence item carries `observer_reputation` — the observer's agreement rate with the crowd on past closed questions plus their answer count — so agents can weight answers.
 
 ## Deploy
 

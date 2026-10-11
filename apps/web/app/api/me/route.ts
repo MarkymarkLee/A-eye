@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { currentObserver } from "@/lib/observer";
-import { observerEntries, updateObserver } from "@/lib/store";
+import { observerEntries, observerStats, updateObserver } from "@/lib/store";
 
 const Patch = z.object({
   display_name: z.string().trim().min(2).max(40).optional(),
@@ -15,7 +15,7 @@ const Patch = z.object({
 
 export async function GET() {
   const obs = await currentObserver();
-  return NextResponse.json({ observer: obs, entries: observerEntries(obs.id) });
+  return NextResponse.json({ observer: obs, entries: observerEntries(obs.id), stats: await observerStats(obs.id) });
 }
 
 export async function PUT(req: Request) {

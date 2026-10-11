@@ -49,8 +49,12 @@ export type SubmissionFields = z.infer<typeof SubmissionFields>;
 
 export type TallyRow = { option: string; count: number; pct: number };
 
+/** How often an observer's answers matched the majority of the other answers on closed questions; weight evidence by it. */
+export type ObserverReputation = { agreement_rate: number | null; scored_answers: number; answer_count: number };
+
 export type Evidence = {
   id: string;
+  observer_reputation: ObserverReputation;
   answer: string;
   option_index: number;
   free_text?: string;
