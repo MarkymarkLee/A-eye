@@ -163,6 +163,111 @@ describe("a-eye MCP server", () => {
     expect(JSON.stringify(res.content)).toContain("Payment required");
   });
 
+  it("rejects an empty question id without making a request", async () => {
+    let calls = 0;
+    const client = await connect(async () => {
+      calls += 1;
+      return Response.json(results("closed"));
+    });
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "" } });
+    expect(res.isError).toBe(true);
+    expect(calls).toBe(0);
+  });
+
+  it("explains how to configure the API URL when fetch cannot reach it", async () => {
+    const client = await connect(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
+    expect(JSON.stringify(res.content)).toContain("Could not reach the A-eye API at http://a-eye.test");
+    expect(JSON.stringify(res.content)).toContain("A_EYE_API_URL");
+  });
+
+  it("summarizes validation issues returned by the API", async () => {
+    const client = await connect(async () =>
+      Response.json(
+        { error: "Invalid question", issues: [{ path: ["options"], message: "options must be distinct" }] },
+        { status: 400 },
+      ),
+    );
+    const res = await client.callTool({
+      name: "ask_location_question",
+      arguments: {
+        lat: 37.87,
+        lng: -122.25,
+        question: "Is there a line?",
+        options: ["Yes", "No"],
+      },
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toContain("options: options must be distinct");
+  });
+
+  it("continues polling after a transient failure and returns the closed results", async () => {
+    let calls = 0;
+    const client = await connect(async () => {
+      calls += 1;
+      if (calls === 1) return Response.json(results("open"));
+      if (calls === 2) throw new TypeError("fetch failed");
+      return Response.json(results("closed"));
+    });
+    const res = await client.callTool({
+      name: "wait_for_results",
+      arguments: { question_id: "q1", timeout_s: 5, include_images: false },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(JSON.parse((res.content as Array<{ text?: string }>)[0]!.text!)).toMatchObject({ status: "closed" });
+  });
+
+  it("returns the last results with a note if polling loses contact until timeout", async () => {
+    let calls = 0;
+    const client = await connect(async () => {
+      calls += 1;
+      if (calls === 1) return Response.json(results("open"));
+      throw new TypeError("fetch failed");
+    });
+    const res = await client.callTool({
+      name: "wait_for_results",
+      arguments: { question_id: "q1", timeout_s: 1, include_images: false },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(JSON.stringify(res.content)).toContain("lost contact with the A-eye API while waiting");
+  });
+
+  it("fetches results exactly once when timeout_s is zero", async () => {
+    let calls = 0;
+    const client = await connect(async () => {
+      calls += 1;
+      return Response.json(results("open"));
+    });
+    const res = await client.callTool({
+      name: "wait_for_results",
+      arguments: { question_id: "q1", timeout_s: 0, include_images: false },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(calls).toBe(1);
+  });
+
+  it("keeps the evidence text when its image is unavailable", async () => {
+    const client = await connect(async (url) => {
+      if (url.endsWith("/img/1.jpg")) return new Response(null, { status: 404 });
+      return Response.json(results("closed"));
+    });
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
+    expect(JSON.stringify(res.content)).toContain("Evidence #1");
+    expect(JSON.stringify(res.content)).toContain("photo unavailable");
+  });
+
+  it("rejects results without tally or evidence arrays", async () => {
+    const client = await connect(async () => Response.json({ question_id: "q1", status: "closed" }));
+    const res = await client.callTool({
+      name: "get_question_results",
+      arguments: { question_id: "q1", include_images: false },
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toContain("Unexpected response");
+  });
+
   it("downscales attached evidence photos to at most 512 px", async () => {
     const sharp = (await import("sharp")).default;
     const photo = await sharp({

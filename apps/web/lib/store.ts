@@ -1456,7 +1456,7 @@ function seed(conn: DatabaseSync) {
 
 export async function questionsByAgent(agentLabel: string, origin: string) {
   const rows = db()
-    .prepare("select id from questions where agent_label = ? order by created_at desc limit 50")
+    .prepare("select id from questions where agent_label = ? collate nocase order by created_at desc limit 50")
     .all(agentLabel) as { id: string }[];
   const results = await Promise.all(rows.map((r) => getResults(r.id, origin)));
   return results.filter((r): r is QuestionResults => Boolean(r));
