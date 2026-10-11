@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { CreateQuestionInput } from "@a-eye/shared";
+import { startEnrichment } from "@/lib/enrich";
 import { allOpenQuestions, createQuestion, getResults, nearbyQuestions } from "@/lib/store";
 import { originOf } from "@/lib/origin";
 
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid question", issues: parsed.error.issues }, { status: 400 });
   }
   const id = createQuestion(parsed.data, req.headers.get("x-a-eye-agent")?.slice(0, 64) || undefined);
+  startEnrichment(id, parsed.data);
   const results = await getResults(id, originOf(req));
   return NextResponse.json(
     { question_id: id, gallery_url: results!.gallery_url, seed_commit: results!.raffle.seed_commit, payment_tx: null },

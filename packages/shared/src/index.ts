@@ -93,6 +93,7 @@ export const PLATFORM_FEE = 0.1;
 
 export * from "./constants";
 export * from "./money";
+export * from "./context";
 
 /** Raw zod shape of CreateQuestionInput, for MCP tool input schemas. */
 export const askQuestionShape = CreateQuestionInput.shape;

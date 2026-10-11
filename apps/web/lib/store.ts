@@ -10,6 +10,7 @@ import {
   type QuestionResults,
   type QuestionStatus,
   type QuestionSummary,
+  type WebBaseline,
 } from "@a-eye/shared";
 import { distanceM } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
@@ -245,6 +246,20 @@ export function createQuestion(input: CreateQuestionInput, agentLabel = "unpaid-
       commit,
     );
   return id;
+}
+
+export function setQuestionEnrichment(
+  id: string,
+  patch: { web_baseline?: WebBaseline | null; place_label?: string | null },
+) {
+  if (patch.web_baseline !== undefined) {
+    db().prepare("update questions set web_baseline = ? where id = ?").run(JSON.stringify(patch.web_baseline), id);
+  }
+  if (patch.place_label !== undefined) {
+    db()
+      .prepare("update questions set place_label = ? where id = ? and place_label is null")
+      .run(patch.place_label?.slice(0, 80) ?? null, id);
+  }
 }
 
 const questionById = (id: string) =>
