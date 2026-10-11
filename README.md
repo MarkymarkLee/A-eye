@@ -70,6 +70,10 @@ X402_E2E=1 A_EYE_AGENT_PRIVATE_KEY=0x... A_EYE_TREASURY_ADDRESS=0x... npm test -
 
 Tools: `ask_location_question`, `get_question_results` (returns photos as image blocks), `wait_for_results`, `check_coverage`, `list_my_questions`.
 
+### Push notifications
+
+Observers can opt in to "new question near you" web push (installable PWA + `/sw.js`). Generate VAPID keys once with `npm run vapid:keys` and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` on Render — with none set, push is a silent no-op. Subscriptions are stored server-side with a coarse (~110 m) location, and one subscription hears about at most one question every 3 minutes (`PUSH_MIN_INTERVAL_SECONDS`).
+
 ## Deploy
 
 Render web service `a-eye` (see `render.yaml`): one Node server with a persistent disk at `/var/data` for the SQLite file and local photos. Photos go to Cloudflare R2 once the `S3_*` env vars are set.

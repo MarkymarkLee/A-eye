@@ -12,6 +12,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "mcp": "npm run start -w @a-eye/mcp",
+    "vapid:keys": "npm run vapid:keys -w @a-eye/web",
     "xrpl:setup": "tsx scripts/xrpl-setup.ts",
     "xrpl:demo": "tsx scripts/xrpl-demo.ts"
   },

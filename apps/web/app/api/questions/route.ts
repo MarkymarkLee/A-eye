@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CreateQuestionInput } from "@a-eye/shared";
 import { startEnrichment } from "@/lib/enrich";
+import { startNearbyPush } from "@/lib/push";
 import { allOpenQuestions, createQuestion, getResults, nearbyQuestions } from "@/lib/store";
 import { originOf } from "@/lib/origin";
 import { paymentsEnabled, prizeUnits, questionPayTo, sendFromTreasury } from "@/lib/payments";
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
 
 async function created(req: Request, id: string, paymentTx: string | null, input: Parameters<typeof createQuestion>[0]) {
   startEnrichment(id, input);
+  startNearbyPush(id, input);
   const results = await getResults(id, originOf(req));
   return NextResponse.json(
     { question_id: id, gallery_url: results!.gallery_url, seed_commit: results!.raffle.seed_commit, payment_tx: paymentTx },
