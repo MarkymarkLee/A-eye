@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "a-eye": {
+      "type": "http",
+      "url": "https://a-eye-1zsv.onrender.com/mcp"
+    }
+  }
+}

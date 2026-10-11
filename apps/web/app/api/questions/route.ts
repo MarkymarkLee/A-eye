@@ -23,7 +23,8 @@ const createPaidQuestion = (payTo: string) =>
   withX402Payment<unknown>(
     async (req, payment) => {
       const parsed = CreateQuestionInput.parse(await req.json());
-      const id = createQuestion(parsed, payment.payer, { payer: payment.payer, tx: payment.txHash }, originOf(req));
+      const agent = req.headers.get("x-a-eye-agent")?.trim().slice(0, 64) || payment.payer;
+      const id = createQuestion(parsed, agent, { payer: payment.payer, tx: payment.txHash }, originOf(req));
       return created(req, id, payment.txHash, parsed);
     },
     {
