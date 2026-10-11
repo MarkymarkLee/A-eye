@@ -67,7 +67,7 @@ async function signAndSubmit(tx: SubmittableTransaction, seed: string) {
 }
 
 /** Numbered checklist that onboards an observer onto the XRPL testnet rail. */
-export function XrplWalletSetup({ badge }: { badge: React.ReactNode }) {
+export function XrplWalletSetup({ badge, onAddress }: { badge: React.ReactNode; onAddress?: (address: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -102,6 +102,7 @@ export function XrplWalletSetup({ badge }: { badge: React.ReactNode }) {
       });
       if (!put.ok) throw new Error((await put.json().catch(() => null))?.error ?? "save_failed");
       saveSeed(wallet.address, wallet.seed);
+      onAddress?.(wallet.address);
       const fund = await fetch("/api/me/xrpl/fund", { method: "POST" });
       if (!fund.ok) toast.message("Wallet created", { description: "Test coins are on their way; it can take a minute to show up." });
       haptic("success");

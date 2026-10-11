@@ -257,12 +257,17 @@ export function MeView() {
             </Disclosure>
           </Card>
         )}
-        {me?.xrpl && (me.observer.payout_rail === "xrpl" || me.observer.xrpl_address) && (
+        {me?.xrpl && (rail === "xrpl" || me.observer.xrpl_address) && (
           <XrplWalletSetup
             badge={<CredentialBadge xrpl={me.xrpl} hasAddress={Boolean(me.observer.xrpl_address)} />}
+            onAddress={(address) => {
+              setXrplAddress(address);
+              setRail("xrpl");
+              setMe((m) => (m ? { ...m, observer: { ...m.observer, xrpl_address: address, payout_rail: "xrpl" } } : m));
+            }}
           />
         )}
-        {me?.xrpl && !(me.observer.payout_rail === "xrpl" || me.observer.xrpl_address) && (
+        {me?.xrpl && !(rail === "xrpl" || me.observer.xrpl_address) && (
           <CredentialBadge xrpl={me.xrpl} hasAddress={Boolean(me.observer.xrpl_address)} />
         )}
 

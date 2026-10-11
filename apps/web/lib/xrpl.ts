@@ -735,8 +735,9 @@ export async function ensureReputationIssuance(client?: Client): Promise<string>
   const wallet = issuerWallet();
   const find = async (c: Client): Promise<string | undefined> => {
     const response = await c.request({ command: "account_objects", account: wallet.address, type: "mpt_issuance" });
-    const entry = (response.result.account_objects as { index?: string }[])[0];
-    return entry?.index;
+    // `index` is the ledger entry key; the MPTokenIssuanceID is the separate 48-hex `mpt_issuance_id`.
+    const entry = (response.result.account_objects as { mpt_issuance_id?: string }[])[0];
+    return entry?.mpt_issuance_id;
   };
   const run = async (c: Client): Promise<string> => {
     const existing = await find(c);

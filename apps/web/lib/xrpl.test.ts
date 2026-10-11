@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeMPTokenMetadata } from "xrpl";
+import { Wallet, decodeMPTokenMetadata } from "xrpl";
 import type { Client, Payment, TxResponse } from "xrpl";
 import {
   CREDENTIAL_TYPE_HEX,
@@ -21,6 +21,7 @@ import {
   explorerTx,
   hasRlusdTrustLine,
   submitBatch,
+  ensureReputationIssuance,
   unixTimestampToRippleTime,
 } from "./xrpl.js";
 
@@ -248,5 +249,26 @@ describe("XRPL helpers", () => {
         ledger_index: 100,
       }),
     ).toThrow(/tecNO_PERMISSION/);
+  });
+});
+
+describe("ensureReputationIssuance", () => {
+  it("returns the existing issuance's MPTokenIssuanceID, not its ledger entry index", async () => {
+    vi.stubEnv("XRPL_ISSUER_SEED", Wallet.generate().seed!);
+    const request = vi.fn().mockResolvedValue({
+      result: {
+        account_objects: [
+          {
+            index: "72184EEB7E62F5C1356C780DAECF65B96144E1EA0C95F84884855A79B60F897C",
+            mpt_issuance_id: "014781A9938471C652D0E54540BF792FC0E72163C0389AFA",
+          },
+        ],
+      },
+    });
+    await expect(ensureReputationIssuance({ request } as unknown as Client)).resolves.toBe(
+      "014781A9938471C652D0E54540BF792FC0E72163C0389AFA",
+    );
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ command: "account_objects", type: "mpt_issuance" }));
+    vi.unstubAllEnvs();
   });
 });
