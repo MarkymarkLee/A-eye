@@ -34,6 +34,7 @@ import { Button } from "./ui/button";
 import { Countdown } from "./ui/countdown";
 import { Skeleton } from "./ui/skeleton";
 import { ReadAloudButton, SpeakAnswerButton } from "./voice-controls";
+import { TestMoney } from "@/components/ui/test-money";
 
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
@@ -122,6 +123,7 @@ export function AnswerFlow({ question: q }: { question: Question }) {
             <Badge tone="solid" size="md">
               <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {q.currency}
             </Badge>
+            <TestMoney />
             <Badge size="md">
               <Countdown to={q.closes_at} />
             </Badge>
@@ -691,7 +693,10 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
         <span aria-hidden className="absolute -right-3 top-1/2 size-6 -translate-y-1/2 rounded-full bg-bg" />
         <div className="flex items-center justify-between text-[12px] font-semibold uppercase tracking-[0.1em] opacity-90">
           <span>Raffle ticket</span>
-          <Ticket className="size-5" aria-hidden />
+          <span className="flex items-center gap-2">
+            <TestMoney tone="onAccent" align="end" />
+            <Ticket className="size-5" aria-hidden />
+          </span>
         </div>
         <p className="mt-5 text-[13px] font-medium opacity-85">Prize</p>
         <p className="text-[38px] font-bold leading-none tabular-nums">
@@ -725,7 +730,10 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
           <Skeleton className="h-[148px] rounded-[22px]" />
         ) : next ? (
           <div className="rounded-[22px] bg-surface p-4 shadow-lift ring-1 ring-line">
-            <p className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-accent-ink">Keep going · next one nearby</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-accent-ink">Keep going · next one nearby</p>
+              <TestMoney align="end" />
+            </div>
             <p className="mt-1.5 text-[17px] font-semibold leading-snug tracking-tight">{next.prompt}</p>
             <p className="mt-1 text-[13.5px] text-muted">
               Win {payout(next)} {next.currency}
