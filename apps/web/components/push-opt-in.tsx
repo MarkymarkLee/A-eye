@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { BellRinging, BellSlash } from "@phosphor-icons/react";
+import { BellRing as BellRinging, BellOff as BellSlash } from "lucide-react";
 import { registerServiceWorker } from "@/lib/sw-client";
 
 const LOC_KEY = "aeye_push_loc";
@@ -176,35 +176,35 @@ export function PushOptIn({ fix }: { fix?: { lat: number; lng: number } }) {
   if (state === "hidden" || state === "loading") return null;
   if (state === "ios-hint") {
     return (
-      <p className="mt-4 flex items-start gap-2 rounded-[12px] bg-surface-2 px-3 py-2.5 text-[13px] leading-snug text-muted">
-        <BellRinging size={18} weight="bold" className="mt-px shrink-0" />
+      <p className="mt-4 flex items-start gap-2 rounded-[16px] bg-surface px-3.5 py-3 ring-1 ring-line text-[13px] leading-snug text-muted">
+        <BellRinging size={18} aria-hidden className="mt-px shrink-0" />
         Add A-eye to your Home Screen to get alerts
       </p>
     );
   }
 
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-3 py-2.5 text-[13px] leading-snug text-muted">
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[16px] bg-surface px-3.5 py-3 ring-1 ring-line text-[13px] leading-snug text-muted">
       {state === "subscribed" ? (
         <>
-          <BellRinging size={18} weight="bold" className="shrink-0 text-ok" />
+          <BellRinging size={18} aria-hidden className="shrink-0 text-ok" />
           <span className="flex-1">
             {hasLocation
               ? `Alerts on for new questions within ${radiusKm} km`
               : "Alerts on. Share your location to hear about questions near you."}
           </span>
           <button type="button" onClick={unsubscribe} disabled={busy} className="btn btn-ghost px-2 py-1 text-[13px]">
-            <BellSlash size={14} weight="bold" /> Turn off
+            <BellSlash size={14} aria-hidden /> Turn off
           </button>
         </>
       ) : state === "denied" ? (
         <>
-          <BellSlash size={18} weight="bold" className="shrink-0" />
+          <BellSlash size={18} aria-hidden className="shrink-0" />
           <span className="flex-1">Notifications are blocked for this site in browser settings.</span>
         </>
       ) : (
         <button type="button" onClick={subscribe} disabled={busy} className="btn btn-ghost px-2 py-1 text-[13px]">
-          <BellRinging size={16} weight="bold" /> {busy ? "Turning on…" : "Alert me to questions nearby"}
+          <BellRinging size={16} aria-hidden /> {busy ? "Turning on…" : "Alert me to questions nearby"}
         </button>
       )}
       {error && <span className="w-full text-bad">{error}</span>}

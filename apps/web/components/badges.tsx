@@ -1,10 +1,9 @@
-import { Crosshair, Eye, Fire, Trophy } from "@phosphor-icons/react/dist/ssr";
-import type { Icon } from "@phosphor-icons/react";
+import { Crosshair, Eye, Flame, Trophy, type LucideIcon } from "lucide-react";
 import { BADGES, type BadgeId } from "@/lib/reputation";
 
-const ICONS: Record<BadgeId, Icon> = {
+const ICONS: Record<BadgeId, LucideIcon> = {
   first_eyes: Eye,
-  streak_3: Fire,
+  streak_3: Flame,
   raffle_winner: Trophy,
   sharpshooter: Crosshair,
 };
@@ -24,7 +23,7 @@ export function BadgeIcons({ badges }: { badges: BadgeId[] }) {
             title={`${BADGES[id].label}: ${BADGES[id].description}`}
             className="grid size-6 place-items-center rounded-full bg-accent/12 text-accent-ink"
           >
-            <I size={14} weight="fill" aria-hidden />
+            <I size={14} aria-hidden />
             <span className="sr-only">{BADGES[id].label}</span>
           </span>
         );
@@ -52,7 +51,7 @@ export function BadgeGrid({ badges }: { badges: BadgeId[] }) {
                 earned ? "bg-accent text-on-accent" : "bg-surface-2 text-muted"
               }`}
             >
-              <I size={18} weight={earned ? "fill" : "regular"} aria-hidden />
+              <I size={18} aria-hidden />
             </span>
             <span className="min-w-0">
               <span className={`block text-[14px] font-medium leading-tight ${earned ? "" : "text-muted"}`}>

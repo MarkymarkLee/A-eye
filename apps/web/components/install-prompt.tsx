@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { DownloadSimple, X } from "@phosphor-icons/react";
+import { Download as DownloadSimple, X } from "lucide-react";
 
 const DISMISSED_KEY = "aeye_install_dismissed";
 
@@ -44,8 +44,8 @@ export function InstallPrompt() {
   };
 
   return (
-    <div className="mt-4 flex items-center gap-2 rounded-[12px] bg-surface-2 px-3 py-2.5 text-[13px] leading-snug text-muted">
-      <DownloadSimple size={18} weight="bold" className="shrink-0" />
+    <div className="mt-4 flex items-center gap-2 rounded-[16px] bg-surface px-3.5 py-3 ring-1 ring-line text-[13px] leading-snug text-muted">
+      <DownloadSimple size={18} aria-hidden className="shrink-0" />
       {showIOSHint && !deferred ? (
         <span className="flex-1">Install: tap Share, then Add to Home Screen</span>
       ) : (
@@ -63,7 +63,7 @@ export function InstallPrompt() {
         </>
       )}
       <button type="button" onClick={dismiss} aria-label="Dismiss install prompt" className="shrink-0 p-1 hover:text-ink">
-        <X size={14} weight="bold" />
+        <X size={14} aria-hidden />
       </button>
     </div>
   );

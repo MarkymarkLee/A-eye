@@ -1,13 +1,21 @@
 import Link from "next/link";
+import { Compass } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function NotFound() {
   return (
-    <main className="mx-auto max-w-[560px] px-4 py-24">
-      <h1 className="text-3xl font-semibold tracking-tight">That question isn&apos;t here.</h1>
-      <p className="mt-2 text-muted">It may have been removed, or the link is wrong.</p>
-      <Link href="/" className="btn btn-ghost mt-6">
-        Back to nearby questions
-      </Link>
+    <main className="mx-auto max-w-[560px] px-4 py-16">
+      <EmptyState
+        icon={<Compass className="size-7" aria-hidden />}
+        title="That question isn’t here"
+        body="It may have been removed, or the link is wrong."
+        action={
+          <Button asChild>
+            <Link href="/">Back to nearby questions</Link>
+          </Button>
+        }
+      />
     </main>
   );
 }

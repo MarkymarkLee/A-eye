@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Camera, Coins, LockSimple, Robot, Trophy, ArrowUUpLeft } from "@phosphor-icons/react";
+import { Camera, Coins, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
 import type { ActivityEvent, ActivityResponse } from "@/lib/activity-types";
 import { formatDistance } from "@/lib/geo";
 import { ago, timeLeft } from "@/lib/time";
@@ -220,7 +220,7 @@ function FeedItem({ e, now, fresh }: { e: ActivityEvent; now: number; fresh: boo
         className={`mt-0.5 grid size-9 place-items-center rounded-full ${highlight ? "bg-accent text-on-accent" : "bg-surface-2 text-ink"}`}
         aria-hidden
       >
-        <Icon size={18} weight="bold" />
+        <Icon size={18} />
       </span>
       <div className="min-w-0">
         <p className="text-[12.5px] text-muted">

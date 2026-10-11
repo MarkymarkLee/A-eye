@@ -2,25 +2,54 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowLeft, ArrowRight, Camera, CheckCircle, Crosshair, ArrowCounterClockwise, Ticket, WarningCircle } from "@phosphor-icons/react";
+import { toast } from "sonner";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Camera,
+  Check,
+  CircleAlert,
+  Footprints,
+  Globe,
+  LocateFixed,
+  Navigation,
+  RotateCcw,
+  Satellite,
+  Send,
+  Ticket,
+  Wallet,
+} from "lucide-react";
 import { GEO_RULES, PLATFORM_FEE, type QuestionSummary } from "@a-eye/shared";
-import { useLocation } from "@/hooks/use-location";
+import { useLocation, type Fix, type LocationState } from "@/hooks/use-location";
+import { usePermission } from "@/hooks/use-permission";
 import { distanceM, formatDistance } from "@/lib/geo";
-import { timeLeft } from "@/lib/time";
+import { celebrate } from "@/lib/confetti";
+import { haptic } from "@/lib/haptics";
+import { directionsUrl, walkHint } from "@/lib/walk";
+import { cn } from "@/lib/cn";
 import { matchSpokenOption, spokenQuestion } from "@/lib/voice-match";
+import { Morph } from "./motion/page";
+import { PermissionHelp } from "./permission-help";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Countdown } from "./ui/countdown";
+import { Skeleton } from "./ui/skeleton";
 import { ReadAloudButton, SpeakAnswerButton } from "./voice-controls";
 
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
+type Phase = { kind: "idle" } | { kind: "sending"; progress: number } | { kind: "done"; distance_m: number };
 
 export function AnswerFlow({ question: q }: { question: Question }) {
-  const loc = useLocation();
+  const perm = usePermission("geolocation");
+  const [asked, setAsked] = useState(false);
+  // Only start GPS (which can trigger the browser prompt) once we've explained why, or it's already allowed.
+  const loc = useLocation(perm === "granted" || asked);
   const [shot, setShot] = useState<Shot | null>(null);
   const [choice, setChoice] = useState<number | null>(null);
   const [freeText, setFreeText] = useState("");
-  const [sending, setSending] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ distance_m: number } | null>(null);
   const [heard, setHeard] = useState<{ text: string; index: number | null } | null>(null);
 
   function onTranscript(text: string) {
@@ -35,14 +64,22 @@ export function AnswerFlow({ question: q }: { question: Question }) {
   const accurate = fix ? fix.accuracy <= GEO_RULES.maxAccuracyM : false;
   const inRange = fix && distance !== undefined ? distance <= q.radius_m + fix.accuracy : false;
   const ready = Boolean(shot && choice !== null && fix && accurate && inRange);
+  const sending = phase.kind === "sending";
+
+  const wasInRange = useRef(false);
+  useEffect(() => {
+    if (inRange && accurate && !wasInRange.current) haptic("success");
+    wasInRange.current = inRange && accurate;
+  }, [inRange, accurate]);
 
   async function submit() {
     if (!shot || choice === null || !fix) return;
     if (Date.now() - Date.parse(shot.capturedAt) > GEO_RULES.maxClockSkewMs) {
-      setError("That photo is over 2 minutes old. Retake it so it reflects right now.");
+      setError("That photo is over 2 minutes old. Retake it so it shows right now.");
+      haptic("error");
       return;
     }
-    setSending(true);
+    setPhase({ kind: "sending", progress: 0 });
     setError(null);
     const body = new FormData();
     body.set("image", shot.blob, "capture.jpg");
@@ -53,63 +90,84 @@ export function AnswerFlow({ question: q }: { question: Question }) {
     body.set("accuracy_m", String(fix.accuracy));
     body.set("captured_at", shot.capturedAt);
     try {
-      const res = await fetch(`/api/questions/${q.id}/submissions`, { method: "POST", body });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Something went wrong. Try again.");
-      setDone({ distance_m: json.distance_m });
+      const json = await upload(`/api/questions/${q.id}/submissions`, body, (p) => setPhase({ kind: "sending", progress: p }));
+      haptic("success");
+      setPhase({ kind: "done", distance_m: json.distance_m });
+      window.scrollTo({ top: 0 });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error. Try again.");
-    } finally {
-      setSending(false);
+      const msg = e instanceof Error ? e.message : "Network error. Try again.";
+      setError(msg);
+      toast.error("Not sent yet", { description: msg });
+      haptic("error");
+      setPhase({ kind: "idle" });
     }
   }
 
-  if (done) return <Done q={q} distance={done.distance_m} />;
+  if (phase.kind === "done") return <Entered q={q} distance={phase.distance_m} fix={fix} />;
 
+  const step = !shot ? 1 : choice === null ? 2 : 3;
   return (
-    <main className="mx-auto max-w-[1100px] px-4 pb-28 pt-5 md:px-6 md:pt-8">
-      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink">
-        <ArrowLeft size={16} weight="bold" /> Nearby
+    <main className="mx-auto max-w-[1100px] px-4 pb-32 pt-4 md:px-6 md:pt-8">
+      <Link
+        href="/"
+        transitionTypes={["nav-back"]}
+        className="-ml-2 inline-flex h-10 items-center gap-1.5 rounded-full px-2 text-[14px] font-medium text-muted hover:text-ink"
+      >
+        <ArrowLeft className="size-4" aria-hidden /> Nearby
       </Link>
 
-      <div className="mt-4 grid gap-8 md:grid-cols-[1fr_1fr] md:gap-12">
+      <div className="mt-2 grid gap-6 md:grid-cols-[1fr_1fr] md:gap-12">
         <div className="md:sticky md:top-[84px] md:self-start">
-          <h1 className="text-[28px] font-semibold leading-[1.15] tracking-tight md:text-[40px]">{q.prompt}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="solid" size="md">
+              <Ticket className="size-3.5" aria-hidden /> Win {payout(q)} {q.currency}
+            </Badge>
+            <Badge size="md">
+              <Countdown to={q.closes_at} />
+            </Badge>
+            <Badge size="md">
+              {q.responses}/{q.max_responses} answered
+            </Badge>
+          </div>
+          <Morph name={`q-${q.id}`}>
+            <h1 className="mt-3 text-[28px] font-semibold leading-[1.12] tracking-tight text-balance md:text-[40px]">{q.prompt}</h1>
+          </Morph>
+          {q.place_label && <p className="mt-2 text-[15px] text-muted">{q.place_label}</p>}
           <div className="mt-3">
             <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
           </div>
-          <dl className="mt-4 grid grid-cols-3 gap-4 border-t border-line pt-4 text-sm">
-            <div>
-              <dt className="text-muted">Raffle pot</dt>
-              <dd className="mt-0.5 font-mono font-semibold text-accent-ink">
-                {q.prize_amount} {q.currency}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted">Closes</dt>
-              <dd className="mt-0.5 font-medium">{timeLeft(q.closes_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted">Answers</dt>
-              <dd className="mt-0.5 font-mono font-medium">
-                {q.responses}/{q.max_responses}
-              </dd>
-            </div>
-          </dl>
-          {q.place_label && <p className="mt-4 text-[15px] text-muted">At {q.place_label}, within {formatDistance(q.radius_m)}.</p>}
           {q.web_baseline && (
-            <p className="mt-2 max-w-[52ch] text-[14px] leading-relaxed text-muted">
-              The web says: &ldquo;{q.web_baseline.answer}&rdquo;. Your photo tells the agent what&apos;s actually true.
+            <p className="mt-4 flex max-w-[52ch] gap-2.5 rounded-[16px] bg-surface-2 p-3.5 text-[14px] leading-relaxed text-muted">
+              <Globe className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                The internet says &ldquo;{q.web_baseline.answer}&rdquo;. Your photo shows what&apos;s really true.
+              </span>
             </p>
           )}
-          <PresenceStatus loc={loc} distance={distance} radius={q.radius_m} inRange={inRange} accurate={accurate} />
+          <Presence
+            perm={perm}
+            asked={asked}
+            onAsk={() => setAsked(true)}
+            loc={loc}
+            distance={distance}
+            q={q}
+            inRange={inRange}
+            accurate={accurate}
+          />
         </div>
 
         <div className="space-y-7">
+          <StepTitle n={1} active={step === 1} done={Boolean(shot)}>
+            Take a live photo
+          </StepTitle>
           <CameraCapture shot={shot} onShot={setShot} />
 
           <fieldset>
-            <legend className="text-[15px] font-medium">What do you see?</legend>
+            <legend className="w-full">
+              <StepTitle n={2} active={step === 2} done={choice !== null}>
+                What do you see?
+              </StepTitle>
+            </legend>
             <div className="mt-3">
               <SpeakAnswerButton onTranscript={onTranscript} />
               {heard && (
@@ -119,23 +177,41 @@ export function AnswerFlow({ question: q }: { question: Question }) {
                 </p>
               )}
             </div>
-            <div className="mt-3 grid gap-2">
+            <div className="mt-3 grid gap-2" role="radiogroup" aria-label="Answer options">
               {q.options.map((opt, i) => {
                 const active = choice === i;
                 return (
-                  <button
+                  <motion.button
                     key={opt}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setChoice(i)}
-                    className={`btn justify-between px-5 py-3.5 text-left text-[16px] ${
-                      active ? "bg-ink text-bg" : "bg-surface text-ink ring-1 ring-line hover:bg-surface-2"
-                    }`}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setChoice(i);
+                      haptic("select");
+                    }}
+                    className={cn(
+                      "flex min-h-14 items-center justify-between gap-3 rounded-[18px] px-5 text-left text-[16px] font-medium transition-colors",
+                      active ? "bg-ink text-bg shadow-lift" : "bg-surface text-ink ring-1 ring-line hover:bg-surface-2",
+                    )}
                   >
                     {opt}
-                    {active && <CheckCircle size={20} weight="fill" />}
-                  </button>
+                    <span
+                      className={cn(
+                        "grid size-6 shrink-0 place-items-center rounded-full transition-colors",
+                        active ? "bg-accent text-on-accent" : "ring-2 ring-surface-3",
+                      )}
+                    >
+                      <AnimatePresence>
+                        {active && (
+                          <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                            <Check className="size-4" strokeWidth={3} aria-hidden />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </span>
+                  </motion.button>
                 );
               })}
             </div>
@@ -162,62 +238,230 @@ export function AnswerFlow({ question: q }: { question: Question }) {
           )}
 
           {error && (
-            <p role="alert" className="flex items-start gap-2 rounded-[12px] bg-bad/10 px-3 py-2.5 text-[14px] text-bad">
-              <WarningCircle size={18} weight="bold" className="mt-px shrink-0" />
+            <p role="alert" className="flex items-start gap-2 rounded-[14px] bg-bad-soft px-3.5 py-3 text-[14px] text-bad">
+              <CircleAlert className="mt-px size-[18px] shrink-0" aria-hidden />
               {error}
             </p>
           )}
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/90 px-4 py-3 backdrop-blur-md [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/90 px-4 pt-3 backdrop-blur-xl [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-4">
-          <p className="text-[13px] leading-snug text-muted">{nextStep({ shot, choice, fix, accurate, inRange })}</p>
-          <button type="button" onClick={submit} disabled={!ready || sending} className="btn btn-primary shrink-0">
-            {sending ? "Sending" : "Submit answer"}
-            {!sending && <ArrowRight size={16} weight="bold" />}
-          </button>
+          <p className="text-[13.5px] leading-snug text-muted" aria-live="polite">
+            {sending ? (phase.progress < 1 ? "Sending your photo…" : "Checking you were at the spot…") : nextStep({ shot, choice, fix, accurate, inRange })}
+          </p>
+          <Button onClick={submit} disabled={!ready || sending} size="lg" className="relative shrink-0 overflow-hidden">
+            {sending && (
+              <motion.span
+                aria-hidden
+                className="absolute inset-y-0 left-0 bg-white/30"
+                animate={{ width: `${Math.max(8, phase.progress * 100)}%` }}
+                transition={{ ease: "easeOut" }}
+              />
+            )}
+            <span className="relative inline-flex items-center gap-2">
+              {sending ? `${Math.round(phase.progress * 100)}%` : "Send answer"}
+              {!sending && <Send className="size-4" aria-hidden />}
+            </span>
+          </Button>
         </div>
       </div>
     </main>
   );
 }
 
-function nextStep(s: { shot: Shot | null; choice: number | null; fix?: unknown; accurate: boolean; inRange: boolean }) {
-  if (!s.fix) return "Waiting for your location.";
-  if (!s.accurate) return "Waiting for a sharper GPS fix.";
-  if (!s.inRange) return "Get closer to the spot to answer.";
-  if (!s.shot) return "Take a photo of what you see.";
-  if (s.choice === null) return "Pick the answer that matches.";
-  return "Ready. One answer per person.";
+function payout(q: Pick<Question, "prize_amount">) {
+  return Math.round(q.prize_amount * (1 - PLATFORM_FEE) * 100) / 100;
 }
 
-function PresenceStatus(props: {
-  loc: ReturnType<typeof useLocation>;
+/** Multipart POST with upload progress (fetch can't report it). Same endpoint and body as before. */
+function upload(url: string, body: FormData, onProgress: (p: number) => void) {
+  return new Promise<{ distance_m: number }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.upload.onload = () => onProgress(1);
+    xhr.onerror = () => reject(new Error("Network error. Check your connection and try again."));
+    xhr.onload = () => {
+      let json: { error?: string; distance_m?: number } = {};
+      try {
+        json = JSON.parse(xhr.responseText);
+      } catch {
+        // Non-JSON error page.
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(json as { distance_m: number });
+      else reject(new Error(json.error ?? "Something went wrong. Try again."));
+    };
+    xhr.send(body);
+  });
+}
+
+function StepTitle({ n, active, done, children }: { n: number; active: boolean; done: boolean; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-2.5 text-[16px] font-semibold tracking-tight">
+      <span
+        className={cn(
+          "grid size-7 place-items-center rounded-full text-[13px] font-bold transition-colors",
+          done ? "bg-ok text-white" : active ? "bg-accent text-on-accent" : "bg-surface-2 text-muted",
+        )}
+      >
+        {done ? <Check className="size-4" strokeWidth={3} aria-hidden /> : n}
+      </span>
+      {children}
+    </span>
+  );
+}
+
+function nextStep(s: { shot: Shot | null; choice: number | null; fix?: unknown; accurate: boolean; inRange: boolean }) {
+  if (!s.fix) return "We need your location first.";
+  if (!s.accurate) return "Waiting for a clearer GPS signal.";
+  if (!s.inRange) return "Walk a bit closer to the pin.";
+  if (!s.shot) return "Take a photo of what you see.";
+  if (s.choice === null) return "Tap the answer that matches.";
+  return "All set. One answer per person.";
+}
+
+function Presence(props: {
+  perm: ReturnType<typeof usePermission>;
+  asked: boolean;
+  onAsk: () => void;
+  loc: LocationState;
   distance?: number;
-  radius: number;
+  q: Question;
   inRange: boolean;
   accurate: boolean;
 }) {
-  const { loc, distance, radius, inRange, accurate } = props;
-  let tone = "text-muted";
-  let text: string;
-  if (loc.status === "pending") text = "Finding your location";
-  else if (loc.status === "unsupported") text = "This browser can't share location";
-  else if (loc.status === "denied") text = loc.message;
-  else if (!accurate) text = `GPS is accurate to ${Math.round(loc.fix.accuracy)} m. We need ${GEO_RULES.maxAccuracyM} m or better.`;
-  else if (!inRange) {
-    tone = "text-bad";
-    text = `You're ${formatDistance(distance!)} away. Get within ${formatDistance(radius)}.`;
-  } else {
-    tone = "text-ok";
-    text = `You're here: ${formatDistance(distance!)} from the spot, GPS within ${Math.round(loc.fix.accuracy)} m.`;
+  const { perm, asked, onAsk, loc, distance, q, inRange, accurate } = props;
+  const box = "mt-5 rounded-[20px] p-4 ring-1";
+  let body: React.ReactNode;
+
+  if (perm === "unknown") {
+    body = <Skeleton className="h-[76px] rounded-[20px]" />;
+    return <div className="mt-5">{body}</div>;
+  }
+  if (loc.status === "denied" || perm === "denied") {
+    const blocked = perm === "denied" || (loc.status === "denied" && loc.reason === "blocked");
+    return (
+      <div className={cn(box, "bg-surface ring-line")} role="status">
+        <Row icon={<Satellite className="size-5" aria-hidden />} tone="warn" title={blocked ? "Location is off" : "Can’t find you yet"}>
+          {blocked
+            ? "We only use it to check you’re at the spot. Nobody else sees it."
+            : loc.status === "denied"
+              ? loc.message
+              : ""}
+        </Row>
+        {blocked && (
+          <div className="mt-3">
+            <PermissionHelp what="location" onRetry={() => location.reload()} />
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (perm === "prompt" && !asked) {
+    return (
+      <div className={cn(box, "bg-surface ring-line")}>
+        <Row icon={<LocateFixed className="size-5" aria-hidden />} tone="sky" title="First, are you at the spot?">
+          Share your location so we can check you&apos;re within {formatDistance(q.radius_m)} of the pin. Your browser will ask
+          once.
+        </Row>
+        <Button className="mt-3" block size="lg" onClick={onAsk}>
+          <LocateFixed className="size-5" aria-hidden /> Check my location
+        </Button>
+      </div>
+    );
+  }
+  if (loc.status === "unsupported") {
+    return (
+      <div className={cn(box, "bg-surface ring-line")}>
+        <Row icon={<Satellite className="size-5" aria-hidden />} tone="warn" title="This browser can’t share location">
+          Try Safari or Chrome on your phone to answer.
+        </Row>
+      </div>
+    );
+  }
+  if (loc.status === "pending") {
+    return (
+      <div className={cn(box, "bg-surface ring-line")} role="status">
+        <Row icon={<Searching />} tone="sky" title="Finding you…">
+          This takes a few seconds. Being outside helps.
+        </Row>
+      </div>
+    );
+  }
+  const fix = loc.fix;
+  if (!accurate) {
+    return (
+      <div className={cn(box, "bg-warn-soft ring-transparent")} role="status">
+        <Row icon={<Searching />} tone="warn" title="Your GPS is a little fuzzy">
+          It&apos;s accurate to about {Math.round(fix.accuracy)} m right now; we need {GEO_RULES.maxAccuracyM} m. Step outside or
+          wait a moment.
+        </Row>
+      </div>
+    );
+  }
+  if (!inRange) {
+    const extra = Math.max(0, distance! - q.radius_m);
+    const closeness = Math.max(0.06, Math.min(1, q.radius_m / distance!));
+    return (
+      <div className={cn(box, "bg-surface ring-line")} role="status" aria-live="polite">
+        <Row icon={<Footprints className="size-5" aria-hidden />} tone="accent" title={`Walk about ${formatDistance(extra)} closer`}>
+          You&apos;re {walkHint(distance!)} from the pin. Answers open within {formatDistance(q.radius_m)}.
+        </Row>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2"
+            animate={{ width: `${closeness * 100}%` }}
+            transition={{ type: "spring", stiffness: 80, damping: 20 }}
+          />
+        </div>
+        <Button asChild variant="secondary" size="md" className="mt-3">
+          <a href={directionsUrl(q.lat, q.lng)} target="_blank" rel="noreferrer">
+            <Navigation className="size-4" aria-hidden /> Directions
+          </a>
+        </Button>
+      </div>
+    );
   }
   return (
-    <p className={`mt-6 flex items-start gap-2 text-[14px] leading-snug ${tone}`} aria-live="polite">
-      <Crosshair size={18} weight="bold" className="mt-px shrink-0" />
-      {text}
-    </p>
+    <motion.div
+      initial={{ scale: 0.97, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className={cn(box, "bg-ok-soft ring-transparent")}
+      role="status"
+    >
+      <Row icon={<Check className="size-5" strokeWidth={3} aria-hidden />} tone="ok" title="You’re at the spot">
+        {formatDistance(distance!)} from the pin. Go ahead and take your photo.
+      </Row>
+    </motion.div>
+  );
+}
+
+function Row({ icon, tone, title, children }: { icon: React.ReactNode; tone: "ok" | "warn" | "sky" | "accent"; title: string; children: React.ReactNode }) {
+  const tones = {
+    ok: "bg-ok text-white",
+    warn: "bg-warn text-white dark:text-bg",
+    sky: "bg-sky text-white",
+    accent: "bg-accent text-on-accent",
+  };
+  return (
+    <div className="flex items-start gap-3">
+      <span className={cn("grid size-10 shrink-0 place-items-center rounded-full", tones[tone])}>{icon}</span>
+      <div>
+        <p className="text-[15.5px] font-semibold tracking-tight">{title}</p>
+        <p className="mt-0.5 text-[14px] leading-relaxed text-muted">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function Searching() {
+  return (
+    <span className="relative grid size-5 place-items-center" aria-hidden>
+      <span className="absolute inset-0 animate-pulse-ring rounded-full bg-white/60" />
+      <LocateFixed className="relative size-5" />
+    </span>
   );
 }
 
@@ -225,7 +469,7 @@ function PresenceStatus(props: {
 function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot | null) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const [state, setState] = useState<"idle" | "starting" | "live" | "error">("idle");
+  const [state, setState] = useState<"idle" | "starting" | "live" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
   const [flash, setFlash] = useState(0);
   const reduce = useReducedMotion();
@@ -239,7 +483,7 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
   async function start() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setState("error");
-      setMessage("This browser can't open the camera. Try Safari or Chrome over HTTPS.");
+      setMessage("This browser can’t open the camera. Try Safari or Chrome.");
       return;
     }
     setState("starting");
@@ -255,12 +499,13 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
       }
       setState("live");
     } catch (e) {
-      setState("error");
-      setMessage(
-        e instanceof DOMException && e.name === "NotAllowedError"
-          ? "Camera access was blocked. Allow it in your browser settings, then try again."
-          : "Couldn't start the camera.",
-      );
+      if (e instanceof DOMException && e.name === "NotAllowedError") {
+        setState("blocked");
+      } else {
+        setState("error");
+        setMessage("The camera didn’t start. Close other apps using it and try again.");
+      }
+      haptic("error");
     }
   }
 
@@ -277,6 +522,7 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
       (blob) => {
         if (!blob) return;
         setFlash((n) => n + 1);
+        haptic("success");
         onShot({ blob, url: URL.createObjectURL(blob), capturedAt });
         stop();
         setState("idle");
@@ -294,27 +540,69 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
 
   return (
     <div>
-      <div className="relative aspect-[4/5] overflow-hidden rounded-[16px] bg-surface-2">
+      <div className="relative aspect-[4/5] overflow-hidden rounded-[24px] bg-ink shadow-lift">
         <video
           ref={video}
           playsInline
           muted
-          className={`absolute inset-0 size-full object-cover ${state === "live" ? "opacity-100" : "opacity-0"}`}
+          aria-label="Camera preview"
+          className={cn("absolute inset-0 size-full object-cover transition-opacity", state === "live" ? "opacity-100" : "opacity-0")}
         />
         {shot && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={shot.url} alt="Your photo" className="absolute inset-0 size-full object-cover" />
+          <motion.img
+            src={shot.url}
+            alt="Your photo"
+            initial={reduce ? false : { scale: 1.06 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 160, damping: 20 }}
+            className="absolute inset-0 size-full object-cover"
+          />
+        )}
+        {(state === "live" || shot) && <Corners />}
+        {shot && (
+          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1.5 text-[12.5px] font-semibold text-white backdrop-blur">
+            <Check className="size-3.5" strokeWidth={3} aria-hidden /> Photo ready
+          </span>
         )}
         {!shot && state !== "live" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
-            <Camera size={36} weight="regular" className="text-muted" />
-            <p className="max-w-[30ch] text-[14px] leading-relaxed text-muted">
-              {state === "error"
-                ? message
-                : state === "starting"
-                  ? "Opening camera"
-                  : "Photos must be taken live in A-eye, so the agent knows they're from right now."}
-            </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-[#1d1f23] to-[#0b0c0e] px-7 text-center text-white">
+            {state === "blocked" ? (
+              <div className="w-full max-w-[320px] text-ink">
+                <p className="mb-3 text-[15px] font-semibold text-white">Camera is blocked</p>
+                <PermissionHelp what="camera" onRetry={start} />
+              </div>
+            ) : (
+              <>
+                <span className="grid size-16 place-items-center rounded-full bg-white/10 ring-1 ring-white/15">
+                  {state === "starting" ? <span className="size-6 animate-pulse rounded-full bg-white/70" /> : <Camera className="size-7" aria-hidden />}
+                </span>
+                <p className="max-w-[28ch] text-[14.5px] leading-relaxed text-white/75">
+                  {state === "error"
+                    ? message
+                    : state === "starting"
+                      ? "Opening your camera…"
+                      : "Photos are taken live here, so the agent knows they’re from right now. Your browser will ask for the camera."}
+                </p>
+                {state !== "starting" && (
+                  <Button size="lg" onClick={start} className="mt-1">
+                    <Camera className="size-5" aria-hidden /> {state === "error" ? "Try again" : "Open camera"}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        {state === "live" && (
+          <div className="absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-black/50 to-transparent pb-5 pt-12">
+            <motion.button
+              type="button"
+              onClick={capture}
+              whileTap={{ scale: 0.9 }}
+              aria-label="Take photo"
+              className="grid size-[76px] place-items-center rounded-full bg-white/25 ring-4 ring-white backdrop-blur-sm"
+            >
+              <span className="size-[60px] rounded-full bg-white" />
+            </motion.button>
           </div>
         )}
         <AnimatePresence>
@@ -322,56 +610,141 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
             <motion.div
               key={flash}
               className="pointer-events-none absolute inset-0 bg-white"
-              initial={{ opacity: 0.85 }}
+              initial={{ opacity: 0.9 }}
               animate={{ opacity: 0 }}
-              transition={{ duration: 0.35 }}
+              transition={{ duration: 0.4 }}
             />
           )}
         </AnimatePresence>
       </div>
-      <div className="mt-3 flex gap-2">
-        {shot ? (
-          <button type="button" onClick={retake} className="btn btn-ghost">
-            <ArrowCounterClockwise size={16} weight="bold" /> Retake
-          </button>
-        ) : state === "live" ? (
-          <button type="button" onClick={capture} className="btn btn-primary">
-            <Camera size={18} weight="bold" /> Take photo
-          </button>
-        ) : (
-          <button type="button" onClick={start} disabled={state === "starting"} className="btn btn-ghost">
-            <Camera size={18} weight="bold" /> {state === "error" ? "Try again" : "Open camera"}
-          </button>
-        )}
-      </div>
+      {shot && (
+        <Button variant="secondary" className="mt-3" onClick={retake}>
+          <RotateCcw className="size-4" aria-hidden /> Retake
+        </Button>
+      )}
     </div>
   );
 }
 
-function Done({ q, distance }: { q: Question; distance: number }) {
-  const reduce = useReducedMotion();
+function Corners() {
   return (
-    <main className="mx-auto flex min-h-[calc(100dvh-60px)] max-w-[560px] flex-col justify-center px-4 py-12">
+    <span aria-hidden className="pointer-events-none absolute inset-4">
+      {["left-0 top-0 border-l-[3px] border-t-[3px] rounded-tl-[12px]", "right-0 top-0 border-r-[3px] border-t-[3px] rounded-tr-[12px]", "bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-[12px]", "bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-[12px]"].map(
+        (c) => (
+          <span key={c} className={cn("absolute size-7 border-white/90", c)} />
+        ),
+      )}
+    </span>
+  );
+}
+
+type Next = Pick<QuestionSummary, "id" | "prompt" | "prize_amount" | "currency" | "closes_at" | "distance_m" | "place_label">;
+
+/** The "You're entered!" moment: confetti, a ticket, and the next nearby question so people keep going. */
+function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fix }) {
+  const reduce = useReducedMotion();
+  const [next, setNext] = useState<Next | null | undefined>(undefined);
+
+  useEffect(() => {
+    void celebrate();
+  }, []);
+
+  useEffect(() => {
+    const lat = fix?.lat ?? q.lat;
+    const lng = fix?.lng ?? q.lng;
+    Promise.all([
+      fetch(`/api/questions?lat=${lat}&lng=${lng}&max_km=5`, { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/me", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => ({ entries: [] })),
+    ])
+      .then(([j, me]: [{ questions: QuestionSummary[] }, { entries?: { question_id: string }[] }]) => {
+        const done = new Set([q.id, ...(me.entries ?? []).map((e) => e.question_id)]);
+        const open = j.questions
+          .filter((x) => x.status === "open" && !done.has(x.id))
+          .sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
+        setNext(open[0] ?? null);
+      })
+      .catch(() => setNext(null));
+  }, [q.id, q.lat, q.lng, fix?.lat, fix?.lng]);
+
+  const entries = q.responses + 1;
+  return (
+    <main className="bg-aurora mx-auto flex min-h-[calc(100dvh-60px)] max-w-[560px] flex-col px-4 pb-16 pt-8">
+      <motion.div
+        initial={reduce ? false : { scale: 0.6, rotate: -8, opacity: 0 }}
+        animate={{ scale: 1, rotate: -3, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 260, damping: 14 }}
+        className="relative mx-auto w-full max-w-[330px] overflow-hidden rounded-[26px] bg-gradient-to-br from-accent to-accent-2 p-5 text-white shadow-lift"
+      >
+        <span aria-hidden className="absolute -left-3 top-1/2 size-6 -translate-y-1/2 rounded-full bg-bg" />
+        <span aria-hidden className="absolute -right-3 top-1/2 size-6 -translate-y-1/2 rounded-full bg-bg" />
+        <div className="flex items-center justify-between text-[12px] font-semibold uppercase tracking-[0.1em] opacity-90">
+          <span>Raffle ticket</span>
+          <Ticket className="size-5" aria-hidden />
+        </div>
+        <p className="mt-5 text-[13px] font-medium opacity-85">Prize</p>
+        <p className="text-[38px] font-bold leading-none tabular-nums">
+          {payout(q)} <span className="text-[18px]">{q.currency}</span>
+        </p>
+        <div className="mt-5 border-t border-dashed border-white/40 pt-3 text-[13px] font-medium opacity-90">
+          Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" /> · {entries === 1 ? "first entry" : `1 of ${entries} entries`}
+        </div>
+      </motion.div>
+
       <motion.div
         initial={reduce ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 100, damping: 20 }}
+        transition={{ delay: 0.25, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="mt-8 text-center"
       >
-        <Ticket size={40} weight="duotone" className="text-accent" />
-        <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight">You&apos;re in the raffle.</h1>
-        <p className="mt-3 text-[16px] leading-relaxed text-muted">
-          Your answer was verified {formatDistance(distance)} from the spot. When the question closes, one verified answer is drawn
-          to win {Math.round(q.prize_amount * (1 - PLATFORM_FEE) * 100) / 100} {q.currency}.
+        <h1 className="text-[34px] font-semibold leading-tight tracking-tight">You&apos;re entered!</h1>
+        <p className="mx-auto mt-2 max-w-[36ch] text-[15.5px] leading-relaxed text-muted">
+          Verified {formatDistance(distance)} from the spot. When the question closes, one answer wins the prize.
         </p>
-        <div className="mt-8 flex flex-wrap gap-2">
-          <Link href={`/q/${q.id}`} className="btn btn-primary">
-            See results <ArrowRight size={16} weight="bold" />
-          </Link>
-          <Link href="/me" className="btn btn-ghost">
-            Set payout wallet
-          </Link>
-        </div>
       </motion.div>
+
+      <motion.section
+        initial={reduce ? false : { opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.45, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="mt-8"
+        aria-label="Next question nearby"
+      >
+        {next === undefined ? (
+          <Skeleton className="h-[148px] rounded-[22px]" />
+        ) : next ? (
+          <div className="rounded-[22px] bg-surface p-4 shadow-lift ring-1 ring-line">
+            <p className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-accent-ink">Keep going · next one nearby</p>
+            <p className="mt-1.5 text-[17px] font-semibold leading-snug tracking-tight">{next.prompt}</p>
+            <p className="mt-1 text-[13.5px] text-muted">
+              Win {payout(next)} {next.currency}
+              {next.distance_m !== undefined && <> · {walkHint(next.distance_m)}</>}
+            </p>
+            <Button asChild size="lg" block className="mt-3.5">
+              <Link href={`/q/${next.id}/answer`} transitionTypes={["nav-forward"]}>
+                Answer next <ArrowRight className="size-5" aria-hidden />
+              </Link>
+            </Button>
+          </div>
+        ) : (
+          <p className="rounded-[22px] bg-surface p-4 text-center text-[14.5px] text-muted ring-1 ring-line">
+            You&apos;ve answered everything nearby. New questions show up on the map.
+          </p>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button asChild variant="secondary" size="lg">
+            <Link href={`/q/${q.id}`} transitionTypes={["nav-forward"]}>
+              Live results
+            </Link>
+          </Button>
+          <Button asChild variant="secondary" size="lg">
+            <Link href="/me">
+              <Wallet className="size-4" aria-hidden /> Get paid
+            </Link>
+          </Button>
+        </div>
+      </motion.section>
     </main>
   );
 }

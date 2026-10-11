@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Crosshair, Minus, Plus } from "@phosphor-icons/react";
+import { ArrowRight, Crosshair, Minus, Plus } from "lucide-react";
 
 type Created = { question_id: string; gallery_url: string; seed_commit: string };
 
@@ -75,7 +75,7 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
         </pre>
         <div className="mt-5 flex flex-wrap gap-2">
           <Link href={`/q/${created.question_id}/answer`} className="btn btn-primary">
-            Answer it <ArrowRight size={16} weight="bold" />
+            Answer it <ArrowRight className="size-4" strokeWidth={2.4} aria-hidden />
           </Link>
           <Link href={`/q/${created.question_id}`} className="btn btn-ghost">
             Results page
@@ -94,7 +94,7 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
         <span className="text-[14px] font-medium">Location</span>
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={locate} disabled={locating} className="btn btn-ghost">
-            <Crosshair size={16} weight="bold" /> {locating ? "Locating" : coords ? "Update to my location" : "Use my location"}
+            <Crosshair className="size-4" strokeWidth={2.4} aria-hidden /> {locating ? "Locating" : coords ? "Update to my location" : "Use my location"}
           </button>
           <span className="font-mono text-[13px] text-muted">
             {coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : "Not set"}
@@ -138,7 +138,7 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
                   onClick={() => setOptions(options.filter((_, j) => j !== i))}
                   className="btn btn-ghost !px-3"
                 >
-                  <Minus size={16} weight="bold" />
+                  <Minus className="size-4" strokeWidth={2.4} aria-hidden />
                 </button>
               )}
             </div>
@@ -146,7 +146,7 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
         </div>
         {options.length < 6 && (
           <button type="button" onClick={() => setOptions([...options, ""])} className="btn btn-ghost justify-self-start !py-2 text-[14px]">
-            <Plus size={14} weight="bold" /> Add answer
+            <Plus className="size-4" strokeWidth={2.4} aria-hidden /> Add answer
           </button>
         )}
       </div>
@@ -166,7 +166,7 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
       )}
 
       <button type="submit" disabled={sending || !coords} className="btn btn-primary justify-self-start">
-        {sending ? "Posting" : "Post question"} {!sending && <ArrowRight size={16} weight="bold" />}
+        {sending ? "Posting" : "Post question"} {!sending && <ArrowRight className="size-4" strokeWidth={2.4} aria-hidden />}
       </button>
     </form>
   );

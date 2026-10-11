@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
+import { ArrowRight } from "lucide-react";
 import { leaderboard } from "@/lib/store";
 import { peekObserverId } from "@/lib/observer";
 import type { LeaderboardRange } from "@/lib/reputation";
@@ -54,7 +54,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           <p className="text-lg font-medium">No verified answers {range === "week" ? "this week" : "yet"}.</p>
           <p className="mt-1 text-[14px] text-muted">The first person to answer takes the top spot.</p>
           <Link href="/" className="btn btn-ghost mt-5">
-            Find questions near you <ArrowRight size={16} weight="bold" />
+            Find questions near you <ArrowRight size={16} />
           </Link>
         </div>
       ) : (

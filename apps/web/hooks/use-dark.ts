@@ -1,13 +1,13 @@
 "use client";
 import { useSyncExternalStore } from "react";
 
-const query = "(prefers-color-scheme: dark)";
+/** True when the resolved theme (html[data-theme]) is dark. */
 const subscribe = (cb: () => void) => {
-  const mq = window.matchMedia(query);
-  mq.addEventListener("change", cb);
-  return () => mq.removeEventListener("change", cb);
+  const obs = new MutationObserver(cb);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => obs.disconnect();
 };
 
 export function useDark() {
-  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
+  return useSyncExternalStore(subscribe, () => document.documentElement.dataset.theme === "dark", () => false);
 }
