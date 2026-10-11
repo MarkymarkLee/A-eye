@@ -59,11 +59,20 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
   const [dir, setDir] = useState(1);
   const [asking, setAsking] = useState(false);
   const primary = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const last = step === STEPS.length;
 
   useEffect(() => {
     primary.current?.focus();
   }, [step]);
+
+  // Restore focus to whatever opened the dialog (e.g. the header help button).
+  useEffect(() => {
+    const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      if (prev?.isConnected) prev.focus();
+    };
+  }, []);
 
   const go = (n: number) => {
     if (n < 0 || n > STEPS.length) return;
@@ -77,6 +86,22 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
       if (e.key === "ArrowRight") go(step + 1);
       if (e.key === "ArrowLeft") go(step - 1);
       if (e.key === "Escape") onFinish();
+      if (e.key === "Tab" && root.current) {
+        const items = root.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        );
+        const first = items[0];
+        const lastEl = items[items.length - 1];
+        if (!first || !lastEl) return;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !root.current.contains(active))) {
+          e.preventDefault();
+          lastEl.focus();
+        } else if (!e.shiftKey && (active === lastEl || !root.current.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -106,6 +131,7 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="onb-title"
+      ref={root}
       className="bg-aurora fixed inset-0 z-[60] flex flex-col overflow-hidden"
       initial={reduce ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -166,7 +192,7 @@ function OnboardingDialog({ onFinish }: { onFinish: () => void }) {
               aria-selected={i === step}
               aria-label={`Step ${i + 1}`}
               onClick={() => go(i)}
-              className="grid h-6 place-items-center"
+              className="grid h-6 min-w-6 place-items-center"
             >
               <motion.span
                 className="block h-2 rounded-full"

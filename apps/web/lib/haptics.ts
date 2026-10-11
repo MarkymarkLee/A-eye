@@ -10,6 +10,8 @@ export type Haptic = keyof typeof PATTERNS;
 
 export function haptic(kind: Haptic = "tap") {
   if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+  // Chrome blocks vibrate() (with a console error) until the user has interacted.
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
   try {
     navigator.vibrate(PATTERNS[kind]);

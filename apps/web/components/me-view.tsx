@@ -46,6 +46,7 @@ export function MeView() {
   const [rail, setRail] = useState<"evm" | "xrpl">("evm");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errField, setErrField] = useState<"wallet" | "xrpl" | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { cache: "no-store" })
@@ -62,8 +63,21 @@ export function MeView() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    // Same checks as app/api/me/route.ts, so typos are flagged without a 400 round trip.
+    const w = wallet.trim();
+    const x = xrplAddress.trim();
+    const fail = (field: "wallet" | "xrpl", msg: string) => {
+      setErr(msg);
+      setErrField(field);
+      haptic("error");
+      document.getElementById(field)?.focus();
+    };
+    if (w && !/^0x[a-fA-F0-9]{40}$/.test(w)) return fail("wallet", "Use a 0x address with 40 hex characters.");
+    if (rail === "xrpl" && !x) return fail("xrpl", "Add an XRPL address to get paid on XRPL.");
+    if (x && !/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(x)) return fail("xrpl", "Use a classic XRPL address starting with r.");
     setSaving(true);
     setErr(null);
+    setErrField(null);
     const res = await fetch("/api/me", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -78,6 +92,7 @@ export function MeView() {
     } else {
       haptic("error");
       setErr(j.error);
+      setErrField(null);
     }
   }
 
@@ -148,9 +163,26 @@ export function MeView() {
             Couldn&apos;t load your profile. Refresh to try again.
           </p>
         ) : !me ? (
-          <div className="mt-8 grid gap-4" aria-label="Loading profile" aria-busy>
-            <Skeleton className="h-12 rounded-[14px]" />
-            <Skeleton className="h-12 rounded-[14px]" />
+          <div className="mt-6" aria-label="Loading profile" aria-busy>
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-5 w-20" />
+              <Skeleton className="h-5 w-24" />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-[76px] rounded-[14px]" />
+              ))}
+            </div>
+            <Card className="mt-6 grid gap-5 p-5">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="grid gap-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-[46px] rounded-[14px]" />
+                  <Skeleton className="h-3.5 w-56" />
+                </div>
+              ))}
+              <Skeleton className="h-[52px] rounded-full" />
+            </Card>
           </div>
         ) : (
           <Card className="mt-6 p-5">
@@ -175,12 +207,19 @@ export function MeView() {
                 <input
                   id="wallet"
                   value={wallet}
-                  onChange={(e) => setWallet(e.target.value)}
+                  onChange={(e) => {
+                    setWallet(e.target.value);
+                    if (errField === "wallet") {
+                      setErrField(null);
+                      setErr(null);
+                    }
+                  }}
                   className="field font-mono text-[14px]"
                   placeholder="0x…"
                   spellCheck={false}
                   autoCapitalize="off"
-                  aria-describedby="wallet-help"
+                  aria-invalid={errField === "wallet" || undefined}
+                  aria-describedby={errField === "wallet" ? "wallet-help me-error" : "wallet-help"}
                 />
                 <p id="wallet-help" className="text-[13px] text-muted">
                   Paste a crypto wallet address (it starts with 0x). Optional until you win.
@@ -226,12 +265,19 @@ export function MeView() {
                   <input
                     id="xrpl"
                     value={xrplAddress}
-                    onChange={(e) => setXrplAddress(e.target.value)}
+                    onChange={(e) => {
+                      setXrplAddress(e.target.value);
+                      if (errField === "xrpl") {
+                        setErrField(null);
+                        setErr(null);
+                      }
+                    }}
                     className="field font-mono text-[14px]"
                     placeholder="r…"
                     spellCheck={false}
                     autoCapitalize="off"
-                    aria-describedby="xrpl-help"
+                    aria-invalid={errField === "xrpl" || undefined}
+                    aria-describedby={errField === "xrpl" ? "xrpl-help me-error" : "xrpl-help"}
                   />
                   <p id="xrpl-help" className="text-[13px] text-muted">
                     Starts with r. Also earns you a Verified Observer badge after {me.xrpl?.threshold ?? 3} answers.
@@ -239,7 +285,7 @@ export function MeView() {
                 </div>
               )}
               {err && (
-                <p role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
+                <p id="me-error" role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
                   {err}
                 </p>
               )}

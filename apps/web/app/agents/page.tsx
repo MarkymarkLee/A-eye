@@ -130,7 +130,11 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           <p className="mt-3 max-w-[56ch] text-[16px] leading-relaxed text-muted">
             Post a question, then poll its results. In local dev it&apos;s free; x402 payment is the next milestone.
           </p>
-          <pre className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
+          <pre
+            tabIndex={0}
+            aria-label="Example request"
+            className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0] focus-visible:outline-2 focus-visible:outline-accent"
+          >
 {`curl -X POST ${origin}/api/questions \\
   -H 'content-type: application/json' \\
   -d '{

@@ -40,7 +40,7 @@ type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer:
 type Shot = { blob: Blob; url: string; capturedAt: string };
 type Phase = { kind: "idle" } | { kind: "sending"; progress: number } | { kind: "done"; distance_m: number };
 
-export function AnswerFlow({ question: q }: { question: Question }) {
+export function AnswerFlow({ question: q, voice }: { question: Question; voice: boolean }) {
   const perm = usePermission("geolocation");
   const [asked, setAsked] = useState(false);
   // Only start GPS (which can trigger the browser prompt) once we've explained why, or it's already allowed.
@@ -51,6 +51,15 @@ export function AnswerFlow({ question: q }: { question: Question }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [heard, setHeard] = useState<{ text: string; index: number | null } | null>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  function moveChoice(from: number, delta: number) {
+    const n = q.options.length;
+    const next = (from + delta + n) % n;
+    setChoice(next);
+    haptic("select");
+    optionRefs.current[next]?.focus();
+  }
 
   function onTranscript(text: string) {
     const index = matchSpokenOption(text, q.options);
@@ -133,9 +142,11 @@ export function AnswerFlow({ question: q }: { question: Question }) {
             <h1 className="mt-3 text-[28px] font-semibold leading-[1.12] tracking-tight text-balance md:text-[40px]">{q.prompt}</h1>
           </Morph>
           {q.place_label && <p className="mt-2 text-[15px] text-muted">{q.place_label}</p>}
-          <div className="mt-3">
-            <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
-          </div>
+          {voice && (
+            <div className="mt-3">
+              <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
+            </div>
+          )}
           {q.web_baseline && (
             <p className="mt-4 flex max-w-[52ch] gap-2.5 rounded-[16px] bg-surface-2 p-3.5 text-[14px] leading-relaxed text-muted">
               <Globe className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -168,15 +179,17 @@ export function AnswerFlow({ question: q }: { question: Question }) {
                 What do you see?
               </StepTitle>
             </legend>
-            <div className="mt-3">
-              <SpeakAnswerButton onTranscript={onTranscript} />
-              {heard && (
-                <p className="mt-2 text-[13px] leading-snug text-muted" aria-live="polite">
-                  Heard &ldquo;{heard.text}&rdquo;.{" "}
-                  {heard.index !== null ? `Picked ${q.options[heard.index]}.` : "Tap the answer that matches."}
-                </p>
-              )}
-            </div>
+            {voice && (
+              <div className="mt-3">
+                <SpeakAnswerButton onTranscript={onTranscript} />
+                {heard && (
+                  <p className="mt-2 text-[13px] leading-snug text-muted" aria-live="polite">
+                    Heard &ldquo;{heard.text}&rdquo;.{" "}
+                    {heard.index !== null ? `Picked ${q.options[heard.index]}.` : "Tap the answer that matches."}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="mt-3 grid gap-2" role="radiogroup" aria-label="Answer options">
               {q.options.map((opt, i) => {
                 const active = choice === i;
@@ -187,6 +200,19 @@ export function AnswerFlow({ question: q }: { question: Question }) {
                     role="radio"
                     aria-checked={active}
                     whileTap={{ scale: 0.98 }}
+                    ref={(el) => {
+                      optionRefs.current[i] = el;
+                    }}
+                    tabIndex={choice === i || (choice === null && i === 0) ? 0 : -1}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+                        e.preventDefault();
+                        moveChoice(i, 1);
+                      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        moveChoice(i, -1);
+                      }
+                    }}
                     onClick={() => {
                       setChoice(i);
                       haptic("select");
@@ -347,14 +373,16 @@ function Presence(props: {
         <Row icon={<Satellite className="size-5" aria-hidden />} tone="warn" title={blocked ? "Location is off" : "Can’t find you yet"}>
           {blocked
             ? "We only use it to check you’re at the spot. Nobody else sees it."
-            : loc.status === "denied"
-              ? loc.message
-              : ""}
+            : "Step outside or near a window, then try again."}
         </Row>
-        {blocked && (
+        {blocked ? (
           <div className="mt-3">
             <PermissionHelp what="location" onRetry={() => location.reload()} />
           </div>
+        ) : (
+          <Button className="mt-3" block size="lg" variant="secondary" onClick={() => location.reload()}>
+            Try again
+          </Button>
         )}
       </div>
     );
@@ -501,6 +529,9 @@ function CameraCapture({ shot, onShot }: { shot: Shot | null; onShot: (s: Shot |
     } catch (e) {
       if (e instanceof DOMException && e.name === "NotAllowedError") {
         setState("blocked");
+      } else if (e instanceof DOMException && (e.name === "NotFoundError" || e.name === "OverconstrainedError")) {
+        setState("error");
+        setMessage("We couldn’t find a camera. Open this page on a phone with a camera.");
       } else {
         setState("error");
         setMessage("The camera didn’t start. Close other apps using it and try again.");

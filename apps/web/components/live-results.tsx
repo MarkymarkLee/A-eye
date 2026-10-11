@@ -176,7 +176,7 @@ function Photo({ e, i, winner, onOpen }: { e: Evidence; i: number; winner: boole
           i % 3 === 1 ? "aspect-square" : "aspect-[4/5]",
           winner && "ring-[3px] ring-accent",
         )}
-        aria-label={`Open photo: ${e.answer}`}
+        aria-label={`Open photo: ${e.answer}, ${formatDistance(e.distance_m)} away`}
       >
         {!loaded && <span className="skeleton absolute inset-0" aria-hidden />}
         {/* eslint-disable-next-line @next/next/no-img-element */}
