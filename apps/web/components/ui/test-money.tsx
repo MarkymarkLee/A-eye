@@ -38,7 +38,7 @@ export function TestMoney({ className, tone = "neutral", align = "start" }: { cl
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setOpen((v) => !v);
+          setOpen(true);
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
