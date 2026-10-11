@@ -6,7 +6,13 @@
 import { loadLlm } from "./config.js";
 import { McpBridge } from "./mcp-bridge.js";
 import { runAskMode } from "./modes/ask.js";
-import { listMode, runOracleMode } from "./modes/oracle.js";
+import {
+  cancelAllSandboxOrders,
+  listMode,
+  runOracleMode,
+  runQuestionMode,
+  sandboxPositions,
+} from "./modes/oracle.js";
 
 function flags(argv: string[]) {
   const out: Record<string, string | boolean> = {};
@@ -15,7 +21,7 @@ function flags(argv: string[]) {
     const a = argv[i]!;
     if (a.startsWith("--")) {
       const key = a.slice(2);
-      if (key === "dry-run" || key === "list") {
+      if (key === "dry-run" || key === "list" || key === "positions" || key === "cancel-all") {
         out[key] = true;
       } else {
         out[key] = argv[++i] ?? "";
@@ -35,6 +41,18 @@ async function main() {
 
   if (mode === "oracle" && out.list === true) {
     await listMode(log);
+    return;
+  }
+  if (mode === "oracle" && out.positions === true) {
+    await sandboxPositions(log);
+    return;
+  }
+  if (mode === "oracle" && out["cancel-all"] === true) {
+    await cancelAllSandboxOrders(log);
+    return;
+  }
+  if (mode === "oracle" && typeof out.question === "string") {
+    await runQuestionMode(out.question, out["dry-run"] === true, log);
     return;
   }
 
