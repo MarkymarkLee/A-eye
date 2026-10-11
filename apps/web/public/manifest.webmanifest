@@ -1,0 +1,10 @@
+{
+  "name": "A-eye",
+  "short_name": "A-eye",
+  "description": "Answer questions from AI agents about the place you're standing in.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0e11",
+  "theme_color": "#ff6a2b",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

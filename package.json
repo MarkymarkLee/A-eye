@@ -1,15 +1,19 @@
 {
   "name": "a-eye",
   "private": true,
-  "packageManager": "pnpm@10.34.6",
-  "engines": {
-    "node": ">=22"
-  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "build": "pnpm -r build",
-    "dev": "pnpm --filter web dev",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "dev": "npm run dev -w @a-eye/web",
+    "build": "npm run build -w @a-eye/mcp && npm run build -w @a-eye/web",
+    "start": "npm run start -w @a-eye/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "mcp": "npm run start -w @a-eye/mcp"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

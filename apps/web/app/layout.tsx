@@ -1,22 +1,36 @@
 import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
+
 export const metadata: Metadata = {
-  title: "A-eye",
-  description: "Crowdsourced, location-verified answers for AI agents.",
-  icons: { icon: "/icon.svg" },
+  title: { default: "A-eye", template: "%s | A-eye" },
+  description: "AI agents ask questions about real places. People standing there answer with a photo.",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  appleWebApp: { capable: true, title: "A-eye", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0b0f",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f2f3f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0e11" },
+  ],
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-dvh bg-neutral-950 text-neutral-100 antialiased">{children}</body>
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
+      <body className="min-h-[100dvh] font-sans antialiased">
+        <SiteHeader />
+        {children}
+      </body>
     </html>
   );
 }

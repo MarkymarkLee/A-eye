@@ -1,11 +1,10 @@
-import {
-  AskQuestionResponse,
+import type {
   Coverage,
+  CreateQuestionInput,
+  CreateQuestionResponse,
   QuestionResults,
   QuestionSummary,
-  type AskQuestionInput,
 } from "@a-eye/shared";
-import { z } from "zod";
 
 export class ApiError extends Error {
   constructor(
@@ -22,12 +21,13 @@ export class AEyeApi {
   constructor(
     private readonly baseUrl: string,
     private readonly fetchImpl: FetchLike = fetch,
+    private readonly agentLabel: string = "mcp-agent",
   ) {}
 
-  private async request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await this.fetchImpl(new URL(path, this.baseUrl).toString(), {
       ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
+      headers: { "content-type": "application/json", "x-a-eye-agent": this.agentLabel, ...init?.headers },
     });
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {
@@ -35,23 +35,23 @@ export class AEyeApi {
         body && typeof body === "object" && "error" in body ? String(body.error) : `${res.status} ${res.statusText}`;
       throw new ApiError(res.status, message);
     }
-    return schema.parse(body);
+    return body as T;
   }
 
-  askQuestion(input: AskQuestionInput) {
-    return this.request(AskQuestionResponse, "/api/questions", { method: "POST", body: JSON.stringify(input) });
+  askQuestion(input: CreateQuestionInput) {
+    return this.request<CreateQuestionResponse>("/api/questions", { method: "POST", body: JSON.stringify(input) });
   }
 
   getResults(questionId: string) {
-    return this.request(QuestionResults, `/api/questions/${encodeURIComponent(questionId)}/results`);
+    return this.request<QuestionResults>(`/api/questions/${encodeURIComponent(questionId)}`);
   }
 
   coverage(lat: number, lng: number) {
-    return this.request(Coverage, `/api/coverage?lat=${lat}&lng=${lng}`);
+    return this.request<Coverage>(`/api/coverage?lat=${lat}&lng=${lng}`);
   }
 
-  listMyQuestions() {
-    return this.request(z.array(QuestionSummary), "/api/questions/mine");
+  async listMyQuestions() {
+    return (await this.request<{ questions: QuestionSummary[] }>("/api/questions/mine")).questions;
   }
 
   async fetchImage(url: string): Promise<{ data: string; mimeType: string } | null> {
