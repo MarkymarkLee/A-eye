@@ -22,11 +22,14 @@ import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
 import { MarketVsHumans } from "./market-vs-humans";
 
+const PHOTO_LIMIT = 6;
+
 export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: boolean }) {
   const [r, setR] = useState(initial);
   const [closing, setClosing] = useState(false);
   const [zoom, setZoom] = useState<Evidence | null>(null);
   const [peekHelp, setPeekHelp] = useState(false);
+  const [allPhotos, setAllPhotos] = useState(false);
   const seen = useRef(initial.evidence.length);
   const open = r.status === "open";
 
@@ -55,7 +58,7 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
   }
 
   return (
-    <main className="mx-auto max-w-[1400px] px-4 pb-24 pt-4 md:px-6 md:pt-8">
+    <main className="mx-auto max-w-[1200px] px-4 pb-24 pt-4 md:px-6 md:pt-8">
       <Link
         href="/"
         transitionTypes={["nav-back"]}
@@ -144,10 +147,16 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
               {r.evidence
                 .slice()
                 .reverse()
+                .slice(0, allPhotos ? undefined : PHOTO_LIMIT)
                 .map((e, i) => (
                   <Photo key={e.id} e={e} i={i} winner={r.raffle.winner_submission_id === e.id} onOpen={() => setZoom(e)} />
                 ))}
             </div>
+          )}
+          {!r.sealed && r.evidence.length > PHOTO_LIMIT && (
+            <Button variant="secondary" block className="mt-1" onClick={() => setAllPhotos((v) => !v)} aria-expanded={allPhotos}>
+              {allPhotos ? "Show fewer photos" : `See all ${r.evidence.length} photos`}
+            </Button>
           )}
         </section>
       </div>

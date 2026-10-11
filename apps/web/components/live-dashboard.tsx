@@ -2,17 +2,20 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
+import { ArrowRight, Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
 import type { ActivityEvent, ActivityResponse } from "@/lib/activity-types";
 import { formatDistance } from "@/lib/geo";
 import { ago, timeLeft } from "@/lib/time";
 import type { MarketComparison } from "@a-eye/shared";
 import { MarketsPanel } from "./markets-panel";
+import { Button } from "./ui/button";
+import { Sheet } from "./ui/sheet";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
 const OVERLAP_MS = 3 * 60_000;
 const MAX_EVENTS = 120;
+const FEED = 5;
 const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, peek: 2, question_closed: 3, raffle_reveal: 4, payout: 5 };
 
 const order = (a: ActivityEvent, b: ActivityEvent) => Date.parse(b.at) - Date.parse(a.at) || RANK[b.type] - RANK[a.type];
@@ -42,6 +45,7 @@ export function LiveDashboard({
   const [events, setEvents] = useState(() => [...initial.events].sort(order));
   const [now, setNow] = useState(() => Date.parse(initial.now));
   const [stale, setStale] = useState(false);
+  const [allEvents, setAllEvents] = useState(false);
   const serverNow = useRef(initial.now);
   const firstIds = useRef(new Set(initial.events.map((e) => e.id)));
 
@@ -76,7 +80,7 @@ export function LiveDashboard({
   const host = target.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
   return (
-    <main className="mx-auto max-w-[1880px] px-4 pb-12 pt-6 md:px-8 md:pt-8">
+    <main className="mx-auto max-w-[1200px] px-4 pb-12 pt-6 md:px-6 md:pt-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="flex items-center gap-2 text-sm text-muted">
@@ -106,7 +110,12 @@ export function LiveDashboard({
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
         <aside className="space-y-6">
-          <section className="rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line">
+          <Button asChild size="lg" block className="lg:hidden">
+            <Link href="/">
+              Answer a question near you <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </Button>
+          <section className="hidden rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line lg:block">
             <h2 className="text-[17px] font-semibold tracking-tight">Scan to answer</h2>
             <p className="mt-1 text-[14px] leading-snug text-muted">Open the camera, answer a question nearby, enter the raffle.</p>
             <div
@@ -150,14 +159,29 @@ export function LiveDashboard({
           {events.length === 0 ? (
             <p className="mt-2 text-[14px] text-muted">Nothing yet. Ask a question from an agent to start the feed.</p>
           ) : (
-            <ol className="mt-2 space-y-2.5">
-              <AnimatePresence initial={false}>
-                {events.map((e) => (
-                  <FeedItem key={e.id} e={e} now={now} fresh={!firstIds.current.has(e.id)} />
-                ))}
-              </AnimatePresence>
-            </ol>
+            <>
+              <ol className="mt-2 space-y-2.5">
+                <AnimatePresence initial={false}>
+                  {events.slice(0, FEED).map((e) => (
+                    <FeedItem key={e.id} e={e} now={now} fresh={!firstIds.current.has(e.id)} />
+                  ))}
+                </AnimatePresence>
+              </ol>
+              {events.length > FEED && (
+                <Button variant="secondary" block className="mt-3" onClick={() => setAllEvents(true)}>
+                  See all activity ({events.length})
+                </Button>
+              )}
+            </>
           )}
+          <Sheet open={allEvents} onOpenChange={setAllEvents} title="All activity" description="Every question, photo, raffle and payout">
+            <h2 className="text-[18px] font-semibold tracking-tight">All activity</h2>
+            <ol className="mt-3 space-y-2.5">
+              {events.map((e) => (
+                <FeedItem key={e.id} e={e} now={now} fresh={false} />
+              ))}
+            </ol>
+          </Sheet>
         </section>
 
         <section aria-label="Latest photos" className="hidden xl:block">
