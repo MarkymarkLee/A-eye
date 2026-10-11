@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 /* A-eye service worker: offline fallback for navigations + web push. */
-const CACHE = "a-eye-v1";
+const CACHE = "a-eye-v2";
 const PRECACHE = [
   "/offline.html",
   "/icons/icon-192.png",
@@ -29,7 +29,13 @@ self.addEventListener("fetch", (event) => {
   // Only navigations get the offline fallback; /_next and /api stay untouched.
   if (request.method !== "GET" || request.mode !== "navigate") return;
   event.respondWith(
-    fetch(request).catch(() => caches.match("/offline.html", { cacheName: CACHE })),
+    fetch(request)
+      .then((res) =>
+        [502, 503, 504].includes(res.status)
+          ? caches.match("/offline.html", { cacheName: CACHE }).then((cached) => cached || res)
+          : res,
+      )
+      .catch(() => caches.match("/offline.html", { cacheName: CACHE })),
   );
 });
 
