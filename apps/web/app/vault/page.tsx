@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Disclosure } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Tabs } from "@/components/ui/tabs";
 import { loadVaultView } from "@/lib/xrpl-vault-state";
 import { devnetAccount, type VaultRole, type VaultView } from "@/lib/xrpl-lending";
 
@@ -75,13 +76,13 @@ function SourceBadge({ view }: { view: VaultView }) {
 
 function Stat({ label, value, unit, hint }: { label: string; value: string; unit?: string; hint?: string }) {
   return (
-    <Card className="p-5">
-      <p className="text-[13px] text-muted">{label}</p>
-      <p className="mt-2 font-mono text-[26px] font-semibold tabular-nums tracking-tight md:text-[30px]">
+    <Card className="min-w-0 p-4 md:p-5">
+      <p className="text-[12.5px] text-muted md:text-[13px]">{label}</p>
+      <p className="mt-1.5 font-mono text-[20px] font-semibold tabular-nums tracking-tight md:text-[28px]">
         {value}
         {unit && <span className="ml-1.5 text-[15px] font-medium text-muted">{unit}</span>}
       </p>
-      {hint && <p className="mt-1 text-[13px] text-muted">{hint}</p>}
+      {hint && <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-muted md:text-[13px]">{hint}</p>}
     </Card>
   );
 }
@@ -108,7 +109,7 @@ export default async function VaultPage() {
     <Page>
       <main>
         <section className="bg-aurora">
-          <div className="mx-auto max-w-[1100px] px-4 pb-14 pt-10 md:px-6 md:pt-16">
+          <div className="mx-auto max-w-[1200px] px-4 pb-12 pt-8 md:px-6 md:pt-14">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="accent" size="md">
                 XLS-65 Single Asset Vault + XLS-66 Lending
@@ -139,8 +140,8 @@ export default async function VaultPage() {
           </div>
         </section>
 
-        <div className="mx-auto max-w-[1100px] px-4 pb-24 md:px-6">
-          <section aria-label="Vault stats" className="-mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto max-w-[1200px] px-4 pb-24 md:px-6">
+          <section aria-label="Vault stats" className="-mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Total value locked" value={xrp(view.tvl_drops)} unit="XRP" hint={`${xrp(view.available_drops)} XRP available`} />
             <Stat
               label="Share price"
@@ -157,20 +158,30 @@ export default async function VaultPage() {
             <Stat label="Vault phase" value={view.phase[0]!.toUpperCase() + view.phase.slice(1)} hint={PHASE_LABEL[view.phase]} />
           </section>
 
-          <section className="mt-12">
+          <Tabs
+            hashSync
+            label="Vault details"
+            className="mt-10"
+            listClassName="md:max-w-[520px]"
+            items={[
+              {
+                value: "overview",
+                label: "Overview",
+                content: (
+                  <>
             <h2 className="text-2xl font-semibold tracking-tight">Who does what</h2>
-            <ol className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <ol className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
               {ROLES.map((r) => {
                 const accounts = [view.accounts[r.role], r.also && view.accounts[r.also]].filter((a): a is string => Boolean(a));
                 return (
                   <li key={r.role}>
-                    <Card className="h-full p-5">
+                    <Card className="h-full p-4 md:p-5">
                       <span className="grid size-10 place-items-center rounded-[13px] bg-gradient-to-br from-accent to-accent-2 text-white">
                         <r.icon className="size-5" aria-hidden />
                       </span>
-                      <p className="mt-4 text-[17px] font-semibold tracking-tight">{r.title}</p>
+                      <p className="mt-3 text-[16px] font-semibold tracking-tight">{r.title}</p>
                       <p className="text-[13px] text-muted">{r.who}</p>
-                      <p className="mt-2 text-[14px] leading-relaxed text-muted">{r.body}</p>
+                      <p className="mt-1.5 text-[13px] leading-snug text-muted md:text-[14px]">{r.body}</p>
                       {accounts.length > 0 && (
                         <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
                           {accounts.map((a) => (
@@ -185,10 +196,7 @@ export default async function VaultPage() {
                 );
               })}
             </ol>
-          </section>
-
-          <section className="mt-12">
-            <h2 className="text-2xl font-semibold tracking-tight">Loans</h2>
+            <h2 className="mt-8 text-2xl font-semibold tracking-tight">Loans</h2>
             {view.loans.length === 0 ? (
               <EmptyState className="mt-5" icon={<Landmark className="size-6" />} title="No loans yet" body="The broker has not issued credit from this vault." />
             ) : (
@@ -221,9 +229,15 @@ export default async function VaultPage() {
                 ))}
               </ul>
             )}
-          </section>
-
-          <section className="mt-12">
+                  </>
+                ),
+              },
+              {
+                value: "steps",
+                label: "Steps",
+                count: view.steps.length,
+                content: (
+                  <>
             <h2 className="text-2xl font-semibold tracking-tight">Capital flow on-chain</h2>
             <p className="mt-1 text-[14px] text-muted">
               {view.source === "simulated"
@@ -256,9 +270,14 @@ export default async function VaultPage() {
                 ))}
               </ol>
             </Card>
-          </section>
-
-          <section className="mt-12 grid gap-3">
+                  </>
+                ),
+              },
+              {
+                value: "learn",
+                label: "Learn more",
+                content: (
+                  <div className="grid gap-3">
             <Disclosure title="Why a closed-ended vault?">
               <p className="text-[14.5px] leading-relaxed text-muted">
                 Under LendingProtocolV1_1 a Loan Broker can only lend from a closed-ended vault. It runs in three phases:
@@ -274,7 +293,11 @@ export default async function VaultPage() {
                 run, then to a simulation.
               </p>
             </Disclosure>
-          </section>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
       </main>
     </Page>

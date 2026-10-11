@@ -10,6 +10,21 @@ import { TallyBars } from "@/components/tally-bars";
 import { AskForm } from "@/components/ask-form";
 import { Reveal } from "@/components/reveal";
 import { formatDistance } from "@/lib/geo";
+import { ConnectAgent } from "@/components/connect-agent";
+import { PLATFORM_FEE_BPS } from "@a-eye/shared";
+import { peekPriceUsd } from "@/lib/payments";
+import {
+  MCPB_DOWNLOAD_PATH,
+  NPX_COMMAND,
+  REPO_URL,
+  claudeCodeCommand,
+  claudeCodeLocalCommand,
+  cursorInstallLink,
+  npxConfig,
+  mcpUrl,
+  vscodeInstallLink,
+  windsurfConfig,
+} from "@/lib/connect-links";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "For agents", description: "Give your AI agent eyes on any place, answered by people standing there." };
@@ -25,6 +40,8 @@ const TOOLS = [
   ["ask_location_question", "Post a question at a lat/lng and pay its pot."],
   ["wait_for_results", "Block until the question closes or a timeout hits."],
   ["get_question_results", "Percentages, counts, gallery link and photos as image blocks."],
+  ["peek_results", "Pay a few cents to see interim results before close."],
+  ["compare_market", "Compare live Gemini odds with the crowd and recorded sandbox trades."],
   ["check_coverage", "How many observers were active nearby recently."],
   ["list_my_questions", "Questions this agent (wallet or A_EYE_AGENT_LABEL) has asked."],
 ];
@@ -35,6 +52,18 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const open = await allOpenQuestions();
   const featured = [...open].sort((a, b) => b.responses - a.responses)[0];
   const live = featured ? await getResults(featured.id, origin) : undefined;
+  const links = {
+    mcpUrl: mcpUrl(origin),
+    cursor: cursorInstallLink(origin),
+    vscode: vscodeInstallLink(origin),
+    claudeCode: claudeCodeCommand(origin),
+    claudeCodeLocal: claudeCodeLocalCommand(),
+    npx: NPX_COMMAND,
+    npxConfig: npxConfig(),
+    repo: REPO_URL,
+    windsurf: windsurfConfig(origin),
+    mcpb: MCPB_DOWNLOAD_PATH,
+  };
   const initial = sp.lat && sp.lng ? { lat: Number(sp.lat), lng: Number(sp.lng) } : undefined;
 
   return (
@@ -52,7 +81,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
-              <a href="#api">
+              <a href="#connect">
                 Connect an agent <ArrowRight className="size-4" strokeWidth={2.4} aria-hidden />
               </a>
             </Button>
@@ -130,11 +159,20 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
         </ol>
       </section>
 
+      <section id="connect" className="mx-auto max-w-[1400px] scroll-mt-20 px-4 pt-20 md:px-6 lg:pt-28">
+        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Connect in one step.</h2>
+        <p className="mt-3 max-w-[60ch] text-[16px] leading-relaxed text-muted">
+          Point any MCP client at the hosted URL, or run the npm package{" "}
+          <code className="whitespace-nowrap font-mono text-[15px]">npx -y a-eye-mcp</code> locally. Same tools either way.
+        </p>
+        <ConnectAgent links={links} pricing={{ peekUsd: peekPriceUsd(), winnerPct: (10_000 - PLATFORM_FEE_BPS) / 100 }} />
+      </section>
+
       <section id="api" className="mx-auto grid max-w-[1400px] scroll-mt-20 gap-10 px-4 py-20 md:px-6 lg:grid-cols-2 lg:gap-16 lg:py-28">
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Any HTTP agent can ask today.</h2>
           <p className="mt-3 max-w-[56ch] text-[16px] leading-relaxed text-muted">
-            Paid servers answer with an x402 402 challenge (AUSD on Base Sepolia); unpaid/dev servers accept it free.
+            Post a question, then poll its results. Paid servers answer with an x402 402 challenge (AUSD on Base Sepolia); unpaid/dev servers accept it free.
           </p>
           <pre
             tabIndex={0}
@@ -155,7 +193,7 @@ curl ${origin}/api/questions/<question_id>`}
         </div>
         <div className="min-w-0">
           <h3 className="text-lg font-semibold tracking-tight">MCP tools</h3>
-          <p className="mt-1 text-[14px] text-muted">The stdio server in packages/mcp wraps the same API.</p>
+          <p className="mt-1 text-[14px] text-muted">Served at /mcp and by the a-eye-mcp npm package.</p>
           <dl className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
             {TOOLS.map(([name, body]) => (
               <div key={name}>

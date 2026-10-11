@@ -7,10 +7,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
 const transferAusdViaFacilitator = vi.fn();
+const ausdBalance = vi.fn();
 vi.mock("./chain", async (original) => ({
   ...(await original<typeof import("./chain")>()),
   transferAusd,
   transferAusdViaFacilitator,
+  ausdBalance,
 }));
 
 const uploadDir = mkdtempSync(path.join(tmpdir(), "a-eye-activity-"));
@@ -82,6 +84,7 @@ describe("activity feed", () => {
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "1");
     transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
     transferAusdViaFacilitator.mockReset().mockRejectedValue(new FacilitatorNotSubmittedError("facilitator unavailable"));
+    ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});

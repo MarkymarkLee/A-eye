@@ -18,6 +18,7 @@ const transferAusdViaFacilitator = vi.fn();
 const ausdAuthorizationUsed = vi.fn();
 const findAuthorizationTx = vi.fn();
 const currentBlockNumber = vi.fn();
+const ausdBalance = vi.fn();
 vi.mock("./chain", async (orig) => ({
   ...(await orig<typeof import("./chain")>()),
   transferAusd,
@@ -27,6 +28,7 @@ vi.mock("./chain", async (orig) => ({
   ausdAuthorizationUsed,
   findAuthorizationTx,
   currentBlockNumber,
+  ausdBalance,
 }));
 
 vi.stubEnv("A_EYE_DB_PATH", ":memory:");
@@ -118,6 +120,7 @@ beforeEach(() => {
   ausdAuthorizationUsed.mockReset().mockResolvedValue(false);
   findAuthorizationTx.mockReset().mockResolvedValue(undefined);
   currentBlockNumber.mockReset().mockResolvedValue(100n);
+  ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
   vi.stubEnv("A_EYE_PAYOUT_RAIL", "");
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -314,6 +317,173 @@ describe("core loop correctness", () => {
     expect(store.db().prepare("select refund_tx from questions where id = ?").get(id)).toMatchObject({
       refund_tx: REFUND_TX,
     });
+  });
+
+  it("backfills a missing payout ledger row and retries it through the facilitator", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `backfill-payout-${id}`;
+    const winner = "0x00000000000000000000000000000000000000fa";
+    store.updateObserver(store.getOrCreateObserver(observerId).id, { evm_address: winner });
+    transferAusd.mockRejectedValueOnce(new Error("insufficient funds for gas"));
+
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    const original = transfers(id)[0]!;
+    expect(original).toMatchObject({ kind: "payout", state: "failed", to_address: winner });
+    expect(original.amount_units).toBe("2250000");
+    store.db().prepare("delete from treasury_transfers where question_id = ? and kind = 'payout'").run(id);
+
+    expect(store.backfillTreasuryTransfers()).toBe(1);
+    expect(transfers(id)[0]).toMatchObject({
+      kind: "payout",
+      state: "pending",
+      to_address: winner,
+      amount_units: original.amount_units,
+    });
+
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    vi.setSystemTime(Date.now() + 61_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+    expect((await store.getResults(id, "http://a-eye.test"))!.raffle.payout_tx).toBe(FACILITATOR_TX);
+
+    const attempts = transferAusdViaFacilitator.mock.calls.length;
+    expect(store.backfillTreasuryTransfers()).toBe(0);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(attempts);
+  });
+
+  it("backfills a missing refund ledger row for an expired paid question", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 3 }, paid);
+    transferAusd.mockRejectedValueOnce(new Error("insufficient funds for gas"));
+    await store.closeNow(id);
+    const original = transfers(id)[0]!;
+    expect(original).toMatchObject({ kind: "refund", state: "failed", to_address: PAYER });
+    store.db().prepare("delete from treasury_transfers where question_id = ? and kind = 'refund'").run(id);
+
+    expect(store.backfillTreasuryTransfers()).toBe(1);
+    expect(transfers(id)[0]).toMatchObject({
+      kind: "refund",
+      state: "pending",
+      to_address: PAYER,
+      amount_units: prizeUnits(2.5).toString(),
+    });
+
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    vi.setSystemTime(Date.now() + 61_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+    expect(store.db().prepare("select refund_tx from questions where id = ?").get(id)).toMatchObject({
+      refund_tx: FACILITATOR_TX,
+    });
+  });
+
+  it("does not backfill payouts or refunds already accounted for by settlement", async () => {
+    const paidId = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `backfill-done-${paidId}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000fb",
+    });
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    expect(await submit(paidId, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(store.db().prepare("select payout_tx from raffles where question_id = ?").get(paidId)).toMatchObject({
+      payout_tx: FACILITATOR_TX,
+    });
+    store.db().prepare("delete from treasury_transfers where question_id = ? and kind = 'payout'").run(paidId);
+    store.backfillTreasuryTransfers();
+    expect(transfers(paidId)).toHaveLength(0);
+
+    const unpaidId = ask({ min_responses: 1, max_responses: 1 });
+    expect(await submit(unpaidId, `backfill-unpaid-${unpaidId}`)).toMatchObject({ ok: true, closed: true });
+    store.backfillTreasuryTransfers();
+    expect(transfers(unpaidId)).toHaveLength(0);
+
+    const refundedId = ask({ min_responses: 3 }, paid);
+    await store.closeNow(refundedId);
+    expect(store.db().prepare("select refund_tx from questions where id = ?").get(refundedId)).toMatchObject({
+      refund_tx: FACILITATOR_TX,
+    });
+    store.db().prepare("delete from treasury_transfers where question_id = ? and kind = 'refund'").run(refundedId);
+    store.backfillTreasuryTransfers();
+    expect(transfers(refundedId)).toHaveLength(0);
+  });
+
+  it("keeps facilitator insufficient-AUSD failures retryable without using the direct rail", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `balance-error-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000fc",
+    });
+    transferAusdViaFacilitator.mockRejectedValueOnce(
+      new FacilitatorNotSubmittedError(
+        "invalid_exact_evm_token_name_mismatch: execution reverted 0xe450d38c ERC20InsufficientBalance",
+      ),
+    );
+
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({
+      state: "failed",
+      last_error: expect.stringMatching(/^insufficient_treasury_balance:/),
+    });
+    expect(transferAusd).not.toHaveBeenCalled();
+
+    vi.setSystemTime(Date.now() + 30_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(1);
+    expect(transferAusd).not.toHaveBeenCalled();
+
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    vi.setSystemTime(Date.now() + 31_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+  });
+
+  it("prechecks treasury AUSD and retries after the balance is restored", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    ausdBalance.mockResolvedValueOnce(0n);
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `balance-low-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000fd",
+    });
+
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(transfers(id)[0]).toMatchObject({
+      state: "failed",
+      last_error: expect.stringMatching(/^insufficient_treasury_balance: have 0 need /),
+    });
+    expect(transferAusdViaFacilitator).not.toHaveBeenCalled();
+    expect(transferAusd).not.toHaveBeenCalled();
+
+    ausdBalance.mockResolvedValue(10n ** 12n);
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    vi.setSystemTime(Date.now() + 61_000);
+    await store.settleDue();
+    await store.flushTreasuryTransfers();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+  });
+
+  it("continues to the facilitator when the treasury balance RPC fails", async () => {
+    ausdBalance.mockRejectedValueOnce(new Error("RPC down"));
+    transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
+    const id = ask({ min_responses: 1, max_responses: 1 }, paid);
+    const observerId = `balance-rpc-${id}`;
+    store.updateObserver(store.getOrCreateObserver(observerId).id, {
+      evm_address: "0x00000000000000000000000000000000000000fe",
+    });
+
+    expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
+    expect(ausdBalance).toHaveBeenCalledTimes(1);
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(1);
+    expect(transferAusd).not.toHaveBeenCalled();
+    expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
   });
 
   it("waits for the winner's EVM address and pays once it appears", async () => {
@@ -554,16 +724,19 @@ describe("core loop correctness", () => {
     store.updateObserver(store.getOrCreateObserver(observerId).id, {
       evm_address: "0x00000000000000000000000000000000000000ee",
     });
+    transferAusdViaFacilitator.mockRejectedValueOnce(new FacilitatorNotSubmittedError("insufficient funds for gas"));
     transferAusd.mockRejectedValue(new Error("insufficient funds for gas"));
     expect(await submit(id, observerId)).toMatchObject({ ok: true, closed: true });
     expect(transfers(id)[0]).toMatchObject({ state: "failed", attempts: 1 });
     expect((await store.getResults(id, "http://a-eye.test"))!.raffle.payout_status).toBe("failed");
+    expect(transferAusd).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(Date.now() + 61_000);
     transferAusdViaFacilitator.mockResolvedValue(FACILITATOR_TX);
     await store.settleDue();
     await store.flushTreasuryTransfers();
     expect(transfers(id)[0]).toMatchObject({ state: "paid", tx: FACILITATOR_TX });
+    expect(transferAusdViaFacilitator).toHaveBeenCalledTimes(2);
     expect(transferAusd).toHaveBeenCalledTimes(1);
   });
 

@@ -1,9 +1,12 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { AEyeApi } from "./api.js";
-import { paymentFromEnv } from "./payments.js";
-import { createServer } from "./server.js";
+import { AEyeApi } from "./api";
+import { paymentFromEnv } from "./payments";
+import { createServer } from "./server";
 
-const baseUrl = process.env.A_EYE_API_URL ?? "http://localhost:3000";
+const configuredBaseUrl = process.env.A_EYE_API_URL;
+const baseUrl = configuredBaseUrl && !configuredBaseUrl.startsWith("${")
+  ? configuredBaseUrl
+  : "https://a-eye-1zsv.onrender.com";
 const payment = paymentFromEnv();
 // A paying agent is identified by its x402 payer address, so list_my_questions uses that.
 const agentLabel = payment?.address ?? process.env.A_EYE_AGENT_LABEL ?? "mcp-agent";

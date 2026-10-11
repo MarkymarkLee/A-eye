@@ -2,17 +2,21 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
+import { ArrowRight, Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as ArrowUUpLeft } from "lucide-react";
 import type { ActivityEvent, ActivityResponse } from "@/lib/activity-types";
 import { formatDistance } from "@/lib/geo";
 import { ago, timeLeft } from "@/lib/time";
 import type { MarketComparison } from "@a-eye/shared";
 import { MarketsPanel } from "./markets-panel";
+import { MoneyTimeline, type MoneyFlow } from "./money-timeline";
+import { Button } from "./ui/button";
+import { Sheet } from "./ui/sheet";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
 const OVERLAP_MS = 3 * 60_000;
 const MAX_EVENTS = 120;
+const FEED = 5;
 const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, peek: 2, question_closed: 3, raffle_reveal: 4, payout: 5 };
 
 const order = (a: ActivityEvent, b: ActivityEvent) => Date.parse(b.at) - Date.parse(a.at) || RANK[b.type] - RANK[a.type];
@@ -42,6 +46,7 @@ export function LiveDashboard({
   const [events, setEvents] = useState(() => [...initial.events].sort(order));
   const [now, setNow] = useState(() => Date.parse(initial.now));
   const [stale, setStale] = useState(false);
+  const [allEvents, setAllEvents] = useState(false);
   const serverNow = useRef(initial.now);
   const firstIds = useRef(new Set(initial.events.map((e) => e.id)));
 
@@ -75,8 +80,23 @@ export function LiveDashboard({
   const photos = events.filter((e): e is Extract<ActivityEvent, { type: "photo" }> => e.type === "photo").slice(0, 9);
   const host = target.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
+  const anySealed = events.some((e) => e.type === "photo" && e.sealed);
+  const flows: MoneyFlow[] = events
+    .flatMap((e): MoneyFlow[] => {
+      const base = { at: e.at, question_id: e.question_id, prompt: e.prompt };
+      const agent = (addr?: string) => (addr ? (`agent ${short(addr)}` as const) : ("agent" as const));
+      if (e.type === "question_asked" && e.payment_tx)
+        return [{ ...base, kind: "bounty", amount: e.prize_amount, currency: e.currency, tx: e.payment_tx, from_label: agent(e.payer_address), to_label: "treasury" }];
+      if (e.type === "peek")
+        return [{ ...base, kind: "peek", amount: e.amount, currency: e.currency, tx: e.tx, from_label: agent(e.payer_address), to_label: "treasury" }];
+      if (e.type === "payout")
+        return [{ ...base, kind: e.kind, amount: e.amount, currency: e.currency, tx: e.tx, from_label: "treasury", to_label: e.to_label }];
+      return [];
+    })
+    .slice(0, 4);
+
   return (
-    <main className="mx-auto max-w-[1880px] px-4 pb-12 pt-6 md:px-8 md:pt-8">
+    <main className="mx-auto max-w-[1200px] px-4 pb-12 pt-6 md:px-6 md:pt-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="flex items-center gap-2 text-sm text-muted">
@@ -106,7 +126,12 @@ export function LiveDashboard({
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
         <aside className="space-y-6">
-          <section className="rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line">
+          <Button asChild size="lg" block className="lg:hidden">
+            <Link href="/">
+              Answer a question near you <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </Button>
+          <section className="hidden rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line lg:block">
             <h2 className="text-[17px] font-semibold tracking-tight">Scan to answer</h2>
             <p className="mt-1 text-[14px] leading-snug text-muted">Open the camera, answer a question nearby, enter the raffle.</p>
             <div
@@ -120,6 +145,12 @@ export function LiveDashboard({
 
           <section>
             <h2 className="text-[15px] font-semibold tracking-tight">Open now</h2>
+            {anySealed && (
+              <p className="mt-2 flex items-start gap-2 rounded-[14px] bg-surface-2 px-3.5 py-3 text-[13.5px] leading-snug text-muted">
+                <LockSimple className="mt-0.5 size-4 shrink-0" aria-hidden />
+                Answers stay hidden until each question closes, so no one can copy the crowd.
+              </p>
+            )}
             {data.open.length === 0 ? (
               <p className="mt-2 text-[14px] text-muted">No open questions. The next agent question appears here.</p>
             ) : (
@@ -143,6 +174,18 @@ export function LiveDashboard({
               </ul>
             )}
           </section>
+
+          <section aria-labelledby="money-trail" className="rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line">
+            <h2 id="money-trail" className="flex items-center gap-2 text-[17px] font-semibold tracking-tight">
+              <Coins className="size-5 text-accent-ink" aria-hidden /> Where the money went
+            </h2>
+            <p className="mt-1 text-[13.5px] leading-snug text-muted">Real AUSD moving on Base Sepolia, newest first. Every step has a public receipt.</p>
+            {flows.length === 0 ? (
+              <p className="mt-3 text-[14px] text-muted">No money has moved yet. When an agent pays for a question, it shows up here.</p>
+            ) : (
+              <MoneyTimeline flows={flows} showQuestion className="mt-4" />
+            )}
+          </section>
         </aside>
 
         <section aria-label="Activity feed" aria-live="polite">
@@ -150,14 +193,29 @@ export function LiveDashboard({
           {events.length === 0 ? (
             <p className="mt-2 text-[14px] text-muted">Nothing yet. Ask a question from an agent to start the feed.</p>
           ) : (
-            <ol className="mt-2 space-y-2.5">
-              <AnimatePresence initial={false}>
-                {events.map((e) => (
-                  <FeedItem key={e.id} e={e} now={now} fresh={!firstIds.current.has(e.id)} />
-                ))}
-              </AnimatePresence>
-            </ol>
+            <>
+              <ol className="mt-2 space-y-2.5">
+                <AnimatePresence initial={false}>
+                  {events.slice(0, FEED).map((e) => (
+                    <FeedItem key={e.id} e={e} now={now} fresh={!firstIds.current.has(e.id)} />
+                  ))}
+                </AnimatePresence>
+              </ol>
+              {events.length > FEED && (
+                <Button variant="secondary" block className="mt-3" onClick={() => setAllEvents(true)}>
+                  See all activity ({events.length})
+                </Button>
+              )}
+            </>
           )}
+          <Sheet open={allEvents} onOpenChange={setAllEvents} title="All activity" description="Every question, photo, raffle and payout">
+            <h2 className="text-[18px] font-semibold tracking-tight">All activity</h2>
+            <ol className="mt-3 space-y-2.5">
+              {events.map((e) => (
+                <FeedItem key={e.id} e={e} now={now} fresh={false} />
+              ))}
+            </ol>
+          </Sheet>
         </section>
 
         <section aria-label="Latest photos" className="hidden xl:block">
@@ -175,7 +233,7 @@ export function LiveDashboard({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={p.thumb_url} alt={p.sealed ? "Photo answer, hidden until close" : `Photo answering "${p.answer}"`} className="aspect-square size-full object-cover" />
                   <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2.5 pb-2 pt-6 text-left text-white">
-                    <span className="block truncate text-[13px] font-medium">{p.sealed ? "Answer hidden until close" : p.answer}</span>
+                    <span className="block truncate text-[13px] font-medium">{p.sealed ? "Hidden until it closes" : p.answer}</span>
                     <span className="block font-mono text-[11px] opacity-80">{formatDistance(p.distance_m)} away</span>
                   </span>
                 </Link>
@@ -289,7 +347,7 @@ function Body({ e }: { e: ActivityEvent }) {
             <p className="text-[16px] font-medium leading-snug">
               {e.sealed ? (
                 <>
-                  {e.observer} answered <span className="text-muted">· hidden until close</span>
+                  {e.observer} answered <span className="text-muted">· hidden until it closes</span>
                 </>
               ) : (
                 <>

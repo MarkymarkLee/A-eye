@@ -17,8 +17,7 @@ import {
   Satellite,
   Send,
   Ticket,
-  Wallet,
-} from "lucide-react";
+  Wallet, Plus } from "lucide-react";
 import { GEO_RULES, PLATFORM_FEE, type QuestionSummary } from "@a-eye/shared";
 import { useLocation, type Fix, type LocationState } from "@/hooks/use-location";
 import { usePermission } from "@/hooks/use-permission";
@@ -48,6 +47,7 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
   const [shot, setShot] = useState<Shot | null>(null);
   const [choice, setChoice] = useState<number | null>(null);
   const [freeText, setFreeText] = useState("");
+  const [noteOpen, setNoteOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [heard, setHeard] = useState<{ text: string; index: number | null } | null>(null);
@@ -116,7 +116,7 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
 
   const step = !shot ? 1 : choice === null ? 2 : 3;
   return (
-    <main className="mx-auto max-w-[1100px] px-4 pb-32 pt-4 md:px-6 md:pt-8">
+    <main className="mx-auto max-w-[1200px] px-4 pb-32 pt-4 md:px-6 md:pt-8">
       <Link
         href="/"
         transitionTypes={["nav-back"]}
@@ -243,7 +243,16 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
             </div>
           </fieldset>
 
-          {q.allow_free_text && (
+          {q.allow_free_text && !noteOpen && !freeText && (
+            <button
+              type="button"
+              onClick={() => setNoteOpen(true)}
+              className="inline-flex min-h-11 items-center gap-2 self-start rounded-full px-1 text-[15px] font-medium text-accent-ink hover:underline"
+            >
+              <Plus className="size-4" aria-hidden /> Add a note <span className="font-normal text-muted">(optional)</span>
+            </button>
+          )}
+          {q.allow_free_text && (noteOpen || freeText) && (
             <div className="grid gap-2">
               <label htmlFor="note" className="text-[15px] font-medium">
                 Anything to add? <span className="font-normal text-muted">(optional)</span>
@@ -253,6 +262,7 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
                 rows={2}
                 maxLength={280}
                 value={freeText}
+                autoFocus={noteOpen && !freeText}
                 onChange={(e) => setFreeText(e.target.value)}
                 className="field resize-none"
                 aria-describedby="note-help"
@@ -273,7 +283,7 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/90 px-4 pt-3 backdrop-blur-xl [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-4">
+        <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-4">
           <p className="text-[13.5px] leading-snug text-muted" aria-live="polite">
             {sending ? (phase.progress < 1 ? "Sending your photo…" : "Checking you were at the spot…") : nextStep({ shot, choice, fix, accurate, inRange })}
           </p>

@@ -25,7 +25,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   const entries = await leaderboard(range, await peekObserverId());
 
   return (
-    <main className="mx-auto max-w-[1100px] px-4 pb-24 pt-8 md:px-6 md:pt-12">
+    <main className="mx-auto max-w-[1200px] px-4 pb-24 pt-8 md:px-6 md:pt-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Leaderboard</h1>
