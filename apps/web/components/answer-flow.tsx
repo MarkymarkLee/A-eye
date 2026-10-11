@@ -35,6 +35,8 @@ import { Countdown } from "./ui/countdown";
 import { Skeleton } from "./ui/skeleton";
 import { ReadAloudButton, SpeakAnswerButton } from "./voice-controls";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount, roundAmount } from "@/lib/money";
+import { useNow } from "@/hooks/use-now";
 
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
@@ -117,7 +119,7 @@ export function AnswerFlow({ question: q }: { question: Question }) {
         <ArrowLeft className="size-4" aria-hidden /> Nearby
       </Link>
 
-      <div className="mt-2 grid gap-6 md:grid-cols-[1fr_1fr] md:gap-12">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-12">
         <div className="md:sticky md:top-[84px] md:self-start">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="solid" size="md">
@@ -284,7 +286,7 @@ export function AnswerFlow({ question: q }: { question: Question }) {
 }
 
 function payout(q: Pick<Question, "prize_amount">) {
-  return Math.round(q.prize_amount * (1 - PLATFORM_FEE) * 100) / 100;
+  return formatAmount(roundAmount(q.prize_amount * (1 - PLATFORM_FEE)));
 }
 
 /** Multipart POST with upload progress (fetch can't report it). Same endpoint and body as before. */
@@ -656,6 +658,33 @@ type Next = Pick<QuestionSummary, "id" | "prompt" | "prize_amount" | "currency" 
 function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fix }) {
   const reduce = useReducedMotion();
   const [next, setNext] = useState<Next | null | undefined>(undefined);
+  const now = useNow(1000);
+  const closed = q.responses + 1 >= q.max_responses || Date.parse(q.closes_at) <= now;
+  const [outcome, setOutcome] = useState<{ status: string; winner?: string }>();
+
+  useEffect(() => {
+    if (!closed) return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const r = (await fetch(`/api/questions/${q.id}`, { cache: "no-store" }).then((res) => res.json())) as {
+          status: string;
+          raffle?: { winner_observer?: string };
+        };
+        if (stop) return;
+        setOutcome({ status: r.status, winner: r.raffle?.winner_observer });
+        if (r.status === "open" || r.status === "closed") timer = setTimeout(poll, 4000);
+      } catch {
+        if (!stop) timer = setTimeout(poll, 6000);
+      }
+    };
+    void poll();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [closed, q.id]);
 
   useEffect(() => {
     void celebrate();
@@ -703,7 +732,18 @@ function Entered({ q, distance, fix }: { q: Question; distance: number; fix?: Fi
           {payout(q)} <span className="text-[18px]">{q.currency}</span>
         </p>
         <div className="mt-5 border-t border-dashed border-white/40 pt-3 text-[13px] font-medium opacity-90">
-          Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" /> · {entries === 1 ? "first entry" : `1 of ${entries} entries`}
+          {!closed ? (
+            <>
+              Draw <Countdown to={q.closes_at} suffix="" icon={false} className="font-semibold" />
+            </>
+          ) : outcome?.status === "settled" ? (
+            <span className="font-semibold">Winner drawn{outcome.winner ? `: ${outcome.winner}` : ""}</span>
+          ) : outcome?.status === "expired" ? (
+            <span className="font-semibold">Closed, not enough answers</span>
+          ) : (
+            <span className="font-semibold">Closed, drawing the winner…</span>
+          )}{" "}
+          · {entries === 1 ? "first entry" : `1 of ${entries} entries`}
         </div>
       </motion.div>
 

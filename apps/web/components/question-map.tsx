@@ -4,6 +4,7 @@ import * as maplibregl from "maplibre-gl";
 import type { QuestionSummary } from "@a-eye/shared";
 import type { Fix } from "@/hooks/use-location";
 import { useDark } from "@/hooks/use-dark";
+import { formatAmount } from "@/lib/money";
 
 // Worker is copied to /public by scripts/copy-maplibre-worker.mjs (see predev/prebuild).
 maplibregl.setWorkerUrl(`/maplibre/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`);
@@ -37,7 +38,7 @@ function cluster(m: maplibregl.Map, qs: QuestionSummary[]) {
 
 function pinHtml(q: QuestionSummary, selected: boolean) {
   const open = q.status === "open";
-  const label = open ? `${q.prize_amount} ${q.currency}` : "Results";
+  const label = open ? `${formatAmount(q.prize_amount)} ${q.currency}` : "Results";
   return `
     <span class="relative flex flex-col items-center transition-transform duration-300 ${selected ? "scale-115 -translate-y-1" : "hover:-translate-y-0.5"}">
       ${open ? '<span class="absolute bottom-[-6px] size-5 rounded-full bg-accent/40 animate-pulse-ring"></span>' : ""}
@@ -72,7 +73,7 @@ export function QuestionMap({ center, questions, fix, selectedId, onSelect }: Pr
       if (g.items.length === 1) {
         const q = g.items[0]!;
         node.innerHTML = pinHtml(q, q.id === selectedId);
-        node.setAttribute("aria-label", `${q.prompt}. ${q.status === "open" ? `Prize ${q.prize_amount} ${q.currency}` : "See results"}`);
+        node.setAttribute("aria-label", `${q.prompt}. ${q.status === "open" ? `Prize ${formatAmount(q.prize_amount)} ${q.currency}` : "See results"}`);
         node.addEventListener("click", (e) => {
           e.stopPropagation();
           onSelect(q.id);

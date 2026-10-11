@@ -20,6 +20,7 @@ import { XrplWalletSetup } from "./xrpl-wallet-setup";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs } from "./ui/tabs";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount } from "@/lib/money";
 
 type Observer = { id: string; display_name: string; evm_address?: string; xrpl_address?: string; payout_rail: "evm" | "xrpl" };
 type Xrpl = {
@@ -206,16 +207,18 @@ export function MeView() {
                   aria-describedby="wallet-help"
                 />
                 <p id="wallet-help" className="text-[13px] text-muted">
-                  Paste a crypto wallet address (it starts with 0x). Optional until you win.
+                  Paste a Base wallet address (it starts with 0x), like MetaMask or Coinbase Wallet. Optional until you win.
                 </p>
               </div>
+              <Disclosure title="Advanced: get paid on the XRP Ledger" defaultOpen={rail === "xrpl"} className="bg-surface-2 ring-0">
+              <div className="grid gap-4">
               <fieldset className="grid gap-2">
                 <legend className="mb-2 text-[14px] font-semibold">Get paid in</legend>
                 <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1" role="radiogroup">
                   {(
                     [
-                      ["evm", "Digital dollars"],
-                      ["xrpl", "RLUSD (XRP Ledger)"],
+                      ["evm", "Base (default)"],
+                      ["xrpl", "XRP Ledger"],
                     ] as const
                   ).map(([value, label]) => (
                     <label
@@ -238,7 +241,7 @@ export function MeView() {
                   ))}
                 </div>
                 {me.xrpl && !me.xrpl.enabled && rail === "xrpl" && (
-                  <p className="text-[13px] text-muted">RLUSD payouts aren&apos;t switched on here yet, so you&apos;ll get digital dollars instead.</p>
+                  <p className="text-[13px] text-muted">RLUSD payouts aren&apos;t switched on here yet, so you&apos;ll get test dollars on Base instead.</p>
                 )}
               </fieldset>
               {rail === "xrpl" && (
@@ -261,6 +264,8 @@ export function MeView() {
                   </p>
                 </div>
               )}
+              </div>
+              </Disclosure>
               {err && (
                 <p role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
                   {err}
@@ -272,9 +277,12 @@ export function MeView() {
             </form>
             <Disclosure title="What kind of wallet?" className="mt-4 bg-surface-2 ring-0">
               <p className="text-[13.5px] leading-relaxed text-muted">
-                Any EVM address works (MetaMask, Coinbase Wallet, Rainbow…). Digital dollars are AUSD, a dollar stablecoin, on the Base
-                Sepolia test network. Prizes are locked in an XRP Ledger escrow and paid to you in RLUSD, a dollar stablecoin, when you
-                win. No RLUSD trust line? You get XRP instead.
+                <b className="font-semibold text-ink">Base (default):</b> prizes arrive as test dollars (AUSD) on the Base Sepolia test
+                network. Any wallet with a 0x address works, like MetaMask, Coinbase Wallet or Rainbow.
+              </p>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+                <b className="font-semibold text-ink">XRP Ledger (advanced):</b> open Advanced above and paste an address that starts with
+                r. You get RLUSD test dollars, or XRP if your wallet can&apos;t hold RLUSD yet.
               </p>
             </Disclosure>
           </Card>
@@ -304,14 +312,16 @@ export function MeView() {
   const greeting = !me ? "Hi there" : `Hi, ${name || "friend"}`;
 
   return (
-    <main className="mx-auto grid max-w-[1200px] gap-6 px-4 pb-24 pt-6 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:gap-12 md:px-6 md:pt-12">
-      <section className="md:sticky md:top-[84px] md:self-start">
-        <div className="flex items-center gap-4">
+    <main className="mx-auto grid max-w-[1200px] grid-cols-[minmax(0,1fr)] gap-6 px-4 pb-24 pt-6 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:gap-12 md:px-6 md:pt-12">
+      <section className="min-w-0 md:sticky md:top-[84px] md:self-start">
+        <div className="flex min-w-0 items-center gap-4">
           <span className="grid size-16 shrink-0 place-items-center rounded-[22px] bg-gradient-to-br from-accent to-accent-2 text-[26px] font-bold text-white shadow-lift">
             {(name || "?").trim().charAt(0).toUpperCase()}
           </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-[28px] font-semibold leading-tight tracking-tight">{greeting}</h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[28px] font-semibold leading-tight tracking-tight" title={greeting}>
+              {greeting}
+            </h1>
             <p className="text-[14px] text-muted">
               {entries.length > 0 ? "Welcome back! " : ""}No sign-up needed. This browser is your account.
             </p>
@@ -336,7 +346,7 @@ export function MeView() {
               <>
                 AUSD earned <TestMoney className="ml-auto" align="end" />
               </>
-            } value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
+            } value={me ? formatAmount(me.stats?.ausd_earned ?? 0) : undefined} wide />
           <Stat
             icon={<Target className="size-4" aria-hidden />}
             label="Agreement"
@@ -383,7 +393,7 @@ function EntryBadge({ e }: { e: Entry }) {
   if (e.won)
     return (
       <Badge tone="solid" size="md">
-        <Trophy className="size-3.5" aria-hidden /> Won {e.prize} {e.currency}
+        <Trophy className="size-3.5" aria-hidden /> Won {formatAmount(e.prize)} {e.currency}
       </Badge>
     );
   if (e.status === "open") return <Badge tone="sky">Draw pending</Badge>;

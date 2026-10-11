@@ -69,6 +69,7 @@ import {
   settlePotBatch,
 } from "./xrpl";
 import { postWebhook } from "./webhook";
+import { roundAmount } from "./money";
 
 /*
  * Local SQLite database (node:sqlite, no native build). Tables follow
@@ -801,7 +802,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
   if (q.payment_tx) {
     ausdFlows.push({
       kind: "bounty",
-      amount: Math.round(q.prize_amount * 100) / 100,
+      amount: roundAmount(q.prize_amount),
       currency: q.currency,
       tx: q.payment_tx,
       url: explorerTxUrl(q.payment_tx),
@@ -813,7 +814,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
   for (const peek of peeks) {
     ausdFlows.push({
       kind: "peek",
-      amount: Math.round(peek.amount * 100) / 100,
+      amount: roundAmount(peek.amount),
       currency: q.currency,
       tx: peek.payment_tx,
       url: explorerTxUrl(peek.payment_tx),
@@ -837,7 +838,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
   if (q.refund_tx) {
     ausdFlows.push({
       kind: "refund",
-      amount: Math.round(q.prize_amount * 100) / 100,
+      amount: roundAmount(q.prize_amount),
       currency: q.currency,
       tx: q.refund_tx,
       url: explorerTxUrl(q.refund_tx),
@@ -853,6 +854,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
     evidence,
     web_baseline: q.web_baseline ? JSON.parse(q.web_baseline) : undefined,
     gallery_url: `${origin}/q/${q.id}`,
+    closed_at: q.closed_at ?? undefined,
     pot_usd: pot,
     ausd_flows: ausdFlows,
     raffle: {

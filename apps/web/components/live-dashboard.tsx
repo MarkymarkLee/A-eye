@@ -12,6 +12,7 @@ import { MoneyTimeline, type MoneyFlow } from "./money-timeline";
 import { Button } from "./ui/button";
 import { Sheet } from "./ui/sheet";
 import { TestMoney } from "@/components/ui/test-money";
+import { formatAmount } from "@/lib/money";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
@@ -30,7 +31,7 @@ function merge(prev: ActivityEvent[], next: ActivityEvent[]) {
 
 const txUrl = (tx: string) => `https://sepolia.basescan.org/tx/${tx}`;
 const short = (h: string) => (h.length > 18 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
-const money = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+const money = formatAmount;
 
 export function LiveDashboard({
   initial,
@@ -126,7 +127,7 @@ export function LiveDashboard({
 
       <MarketsPanel initial={initialMarkets} />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
         <aside className="space-y-6">
           <Button asChild size="lg" block className="lg:hidden">
             <Link href="/">
@@ -184,7 +185,7 @@ export function LiveDashboard({
               </h2>
               <TestMoney align="end" />
             </div>
-            <p className="mt-1 text-[13.5px] leading-snug text-muted">Real AUSD moving on Base Sepolia, newest first. Every step has a public receipt.</p>
+            <p className="mt-1 text-[13.5px] leading-snug text-muted">Test dollars moving live on Base Sepolia, newest first. Every step has a public receipt.</p>
             {flows.length === 0 ? (
               <p className="mt-3 text-[14px] text-muted">No money has moved yet. When an agent pays for a question, it shows up here.</p>
             ) : (

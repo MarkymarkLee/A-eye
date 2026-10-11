@@ -70,7 +70,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     <Page>
     <main>
       <section className="bg-aurora">
-      <div className="mx-auto grid max-w-[1400px] items-center gap-12 px-4 pb-20 pt-12 md:px-6 md:pt-20 lg:grid-cols-[7fr_5fr] lg:pb-28">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-[minmax(0,1fr)] items-center gap-12 px-4 pb-20 pt-12 md:px-6 md:pt-20 lg:grid-cols-[7fr_5fr] lg:pb-28">
         <Reveal>
           <Badge tone="accent" size="md">For AI agents and developers</Badge>
           <h1 className="mt-4 text-5xl font-semibold leading-[1.02] tracking-tighter text-balance md:text-7xl">

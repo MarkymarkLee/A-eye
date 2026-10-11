@@ -5,6 +5,7 @@ import { imageUrl } from "./storage";
 import { db, payoutAmount, potAmount, settleDue } from "./store";
 import { peekPaywallActive } from "./payments";
 import { tally } from "./tally";
+import { roundAmount } from "./money";
 
 type Row = Record<string, unknown>;
 
@@ -123,7 +124,7 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
       prompt: row.prompt as string,
       place_label: (row.place_label as string | null) ?? undefined,
       tx: row.payment_tx as string,
-      amount: Math.round((row.amount as number) * 100) / 100,
+      amount: roundAmount(row.amount as number),
       currency: row.currency as string,
       payer_address: (row.payer_address as string | null) ?? undefined,
       responses_at_peek: row.responses_at_peek as number,
@@ -261,9 +262,9 @@ export async function activity(opts: { origin: string; since?: string; limit?: n
   const paid = payoutPrizes.reduce((sum, row) => sum + payoutAmount(potAmount(row)), 0);
   const counters: ActivityCounters = {
     ...counterRow,
-    ausd_paid: Math.round(paid * 100) / 100,
-    ausd_bounties: Math.round(counterRow.ausd_bounties * 100) / 100,
-    ausd_peeks: Math.round(counterRow.ausd_peeks * 100) / 100,
+    ausd_paid: roundAmount(paid),
+    ausd_bounties: roundAmount(counterRow.ausd_bounties),
+    ausd_peeks: roundAmount(counterRow.ausd_peeks),
   };
 
   const openRows = conn
