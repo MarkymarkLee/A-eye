@@ -1,0 +1,10 @@
+{
+  "name": "a-eye",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev -w @a-eye/web",
+    "build": "npm run build -w @a-eye/web",
+    "test": "npm run test -w @a-eye/web"
+  }
+}
