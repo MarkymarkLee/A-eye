@@ -33,6 +33,14 @@ export const CreateQuestionInput = z.object({
   min_responses: z.number().int().min(1).max(100).default(3),
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),
+  webhook_url: z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine((url) => /^https?:\/\//i.test(url), "webhook_url must be http(s)")
+    .optional()
+    .describe("POSTed the final results JSON once when the question settles or expires."),
   market_ref: MarketRef.optional(),
   /** Lock the pot in an XRPL testnet escrow (no-op when the server has no XRPL wallets configured). */
   xrpl_escrow: z.boolean().optional(),
