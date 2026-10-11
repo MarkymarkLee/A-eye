@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
+import { securityHeaders } from "./lib/security-headers";
 
 const config: NextConfig = {
+  poweredByHeader: false,
   transpilePackages: ["@a-eye/shared"],
   serverExternalPackages: ["web-push"],
   images: {
@@ -8,6 +10,10 @@ const config: NextConfig = {
   },
   async headers() {
     return [
+      {
+        source: "/:path*",
+        headers: securityHeaders({ dev: process.env.NODE_ENV !== "production" }),
+      },
       {
         source: "/icons/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],

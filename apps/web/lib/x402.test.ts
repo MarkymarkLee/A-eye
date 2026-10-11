@@ -1,6 +1,10 @@
 import { AUSD, X402_NETWORK } from "@a-eye/shared";
 import { x402Client } from "@x402/core/client";
-import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
+import {
+  decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
+  encodePaymentSignatureHeader,
+} from "@x402/core/http";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
@@ -172,6 +176,57 @@ describe("withX402Payment", () => {
     expect(seen).toHaveLength(0);
   });
 
+  it("prevents concurrent reuse of the same payment authorization", async () => {
+    const { facilitator, calls } = mockFacilitator();
+    const route = withX402Payment(handler, { price, payTo: TREASURY, facilitator });
+    const paymentHeader = await signedHeader(0.01);
+    const makeRequest = () => post({ prize_usd: 0.01 }, { "PAYMENT-SIGNATURE": paymentHeader });
+
+    const responses = await Promise.all([route(makeRequest()), route(makeRequest())]);
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 402]);
+    const duplicate = responses.find((response) => response.status === 402)!;
+    expect(await duplicate.json()).toMatchObject({ error: "Payment authorization already used" });
+    expect(seen).toHaveLength(1);
+    expect(calls.verify).toHaveLength(1);
+    expect(calls.settle).toHaveLength(1);
+  });
+
+  it.each(["asset", "network", "payTo"] as const)("rejects a mismatched accepted %s", async (field) => {
+    const { facilitator, calls } = mockFacilitator();
+    const route = withX402Payment(handler, { price, payTo: TREASURY, facilitator });
+    const payload = await signedPayload(0.01);
+    if (field === "asset") payload.accepted.asset = "0x0000000000000000000000000000000000000001";
+    if (field === "network") payload.accepted.network = "eip155:1";
+    if (field === "payTo") payload.accepted.payTo = "0x0000000000000000000000000000000000000001";
+    const res = await route(
+      post({ prize_usd: 0.01 }, { "PAYMENT-SIGNATURE": encodePaymentSignatureHeader(payload) }),
+    );
+    expect(res.status).toBe(402);
+    expect(await res.json()).toMatchObject({ error: "Payment does not match the requirements" });
+    expect(calls.verify).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("releases the replay reservation after settlement failure for an honest retry", async () => {
+    let settlements = 0;
+    const { facilitator } = mockFacilitator({
+      settle: async () => {
+        settlements += 1;
+        return settlements === 1
+          ? { success: false, errorReason: "temporary failure", transaction: "", network: X402_NETWORK }
+          : { success: true, transaction: TX, network: X402_NETWORK, payer: agent.address };
+      },
+    });
+    const route = withX402Payment(handler, { price, payTo: TREASURY, facilitator });
+    const paymentHeader = await signedHeader(0.01);
+    const first = await route(post({ prize_usd: 0.01 }, { "PAYMENT-SIGNATURE": paymentHeader }));
+    const retry = await route(post({ prize_usd: 0.01 }, { "PAYMENT-SIGNATURE": paymentHeader }));
+    expect(first.status).toBe(402);
+    expect(retry.status).toBe(201);
+    expect(settlements).toBe(2);
+    expect(seen).toHaveLength(1);
+  });
+
   it("rejects a payment signed for a different amount", async () => {
     const { facilitator, calls } = mockFacilitator();
     const route = withX402Payment(handler, { price, payTo: TREASURY, facilitator });
@@ -216,9 +271,13 @@ describe("withX402Payment", () => {
 });
 
 async function signedHeader(prizeUsd: number): Promise<string> {
+  return encodePaymentSignatureHeader(await signedPayload(prizeUsd));
+}
+
+async function signedPayload(prizeUsd: number): Promise<PaymentPayload> {
   const { facilitator } = mockFacilitator();
   const route = withX402Payment(async () => new Response(null, { status: 204 }), { price, payTo: TREASURY, facilitator });
   const challenge = await route(post({ prize_usd: prizeUsd }));
   const required = decodePaymentRequiredHeader(challenge.headers.get("PAYMENT-REQUIRED")!);
-  return encodePaymentSignatureHeader(await payingClient().createPaymentPayload(required));
+  return payingClient().createPaymentPayload(required);
 }
