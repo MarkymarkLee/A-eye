@@ -2,6 +2,7 @@ import {
   Client,
   Wallet,
   convertStringToHex,
+  dropsToXrp,
   isValidClassicAddress,
   isoTimeToRippleTime,
   xrpToDrops,
@@ -349,6 +350,34 @@ export async function finishEscrow(input: {
     return { finish: submitResult(finish.response), payout, amount_drops: escrow.Amount };
   });
 }
+
+/** Plain XRP payment from the treasury (winner payout after the pot escrow is released). */
+export async function payoutXrp(destination: string, amountDrops: string): Promise<SubmitResult> {
+  assertAddress(destination);
+  if (!/^[1-9]\d*$/.test(amountDrops)) throw new XrplError("invalid_amount");
+  const wallet = treasuryWallet();
+  return withClient(async (client) => {
+    const { response } = await submit(client, wallet, {
+      TransactionType: "Payment",
+      Account: wallet.address,
+      Destination: destination,
+      Amount: amountDrops,
+    });
+    return submitResult(response);
+  });
+}
+
+/** USD prize to an XRP amount string (testnet rate from XRPL_XRP_PER_USD, default 1 XRP per USD). */
+export function potXrpForUsd(usd: number): string {
+  const rate = Number(process.env.XRPL_XRP_PER_USD ?? 1);
+  const xrp = usd * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+  const value = Math.max(xrp, 0.000001).toFixed(6).replace(/\.?0+$/, "");
+  return amountString(value);
+}
+
+export const dropsToXrpString = (drops: string) => String(dropsToXrp(drops));
+
+export const isClassicAddress = (address: string) => isValidClassicAddress(address);
 
 export async function cancelEscrow(input: { owner?: string; offerSequence: number }): Promise<SubmitResult> {
   const wallet = treasuryWallet();
