@@ -20,7 +20,7 @@ export default async function AnswerPage({ params }: { params: Promise<{ id: str
   const { tally: _t, evidence: _e, raffle: _r, ...question } = r;
   return (
     <Page>
-      <AnswerFlow question={question} />
+      <AnswerFlow question={question} voice={Boolean(process.env.ELEVENLABS_API_KEY)} />
     </Page>
   );
 }

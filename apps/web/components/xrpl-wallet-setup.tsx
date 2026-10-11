@@ -254,7 +254,13 @@ export function XrplWalletSetup({ badge, onAddress }: { badge: React.ReactNode; 
             ) : (
               <Disclosure title="Show the trust line to add" className="bg-surface-2 ring-0">
                 <div className="relative">
-                  <pre className="overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px]">{trustSetJson}</pre>
+                  <pre
+                    tabIndex={0}
+                    aria-label="Trust line JSON"
+                    className="overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    {trustSetJson}
+                  </pre>
                   <button
                     type="button"
                     aria-label="Copy trust line JSON"

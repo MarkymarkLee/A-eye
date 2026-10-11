@@ -35,7 +35,7 @@ export function BadgeIcons({ badges }: { badges: BadgeId[] }) {
 /** Every badge, earned ones lit, the rest showing how to get them. */
 export function BadgeGrid({ badges }: { badges: BadgeId[] }) {
   return (
-    <ul className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+    <ul className="grid grid-cols-2 gap-2">
       {ORDER.map((id) => {
         const I = ICONS[id];
         const earned = badges.includes(id);

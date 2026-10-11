@@ -200,7 +200,7 @@ function Photo({ e, i, winner, onOpen }: { e: Evidence; i: number; winner: boole
           i % 3 === 1 ? "aspect-square" : "aspect-[4/5]",
           winner && "ring-[3px] ring-accent",
         )}
-        aria-label={`Open photo: ${e.answer}`}
+        aria-label={`Open photo: ${e.answer}, ${formatDistance(e.distance_m)} away${winner ? ", Winner" : ""}`}
       >
         {!loaded && <span className="skeleton absolute inset-0" aria-hidden />}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -518,7 +518,11 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
         question id, then picks from the sorted submission ids, exactly like the server did.
       </p>
       <div className="relative mt-3">
-        <pre className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed">
+        <pre
+          tabIndex={0}
+          aria-label="Raffle verification code"
+          className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed focus-visible:outline-2 focus-visible:outline-accent"
+        >
           <code>{code}</code>
         </pre>
         <button
