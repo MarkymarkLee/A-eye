@@ -11,7 +11,7 @@ const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
 const OVERLAP_MS = 3 * 60_000;
 const MAX_EVENTS = 120;
-const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, question_closed: 2, raffle_reveal: 3, payout: 4 };
+const RANK: Record<ActivityEvent["type"], number> = { question_asked: 0, photo: 1, peek: 2, question_closed: 3, raffle_reveal: 4, payout: 5 };
 
 const order = (a: ActivityEvent, b: ActivityEvent) => Date.parse(b.at) - Date.parse(a.at) || RANK[b.type] - RANK[a.type];
 
@@ -189,6 +189,7 @@ function Counter({ label, value, sub, accent }: { label: string; value: number |
 const ICON = {
   question_asked: Robot,
   photo: Camera,
+  peek: Coins,
   question_closed: LockSimple,
   raffle_reveal: Trophy,
   payout: Coins,
@@ -197,6 +198,7 @@ const ICON = {
 const LABEL: Record<ActivityEvent["type"], string> = {
   question_asked: "Agent asked",
   photo: "Photo answer",
+  peek: "Paid peek",
   question_closed: "Question closed",
   raffle_reveal: "Raffle drawn",
   payout: "Payout",

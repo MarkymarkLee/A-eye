@@ -59,6 +59,17 @@ export type SubmissionFields = z.infer<typeof SubmissionFields>;
 
 export type TallyRow = { option: string; count: number; pct: number };
 
+export type AusdFlow = {
+  kind: "bounty" | "peek" | "payout" | "refund";
+  amount: number;
+  currency: string;
+  tx: string;
+  url: string;
+  from_label: "agent" | `agent ${string}` | "treasury";
+  to_label: "treasury" | "agent" | string;
+  at?: string;
+};
+
 /** How often an observer's answers matched the majority of the other answers on closed questions; weight evidence by it. */
 export type ObserverReputation = { agreement_rate: number | null; scored_answers: number; answer_count: number };
 
@@ -135,6 +146,10 @@ export type QuestionResults = QuestionSummary & {
   web_baseline?: { answer: string; source: string };
   raffle: RaffleInfo;
   gallery_url: string;
+  sealed?: boolean;
+  peek?: { price_usd: number; url: string };
+  pot_usd: number;
+  ausd_flows: AusdFlow[];
 };
 
 export const GEO_RULES = {
