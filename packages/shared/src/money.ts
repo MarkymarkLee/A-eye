@@ -1,4 +1,4 @@
-import { AUSD, PLATFORM_FEE_BPS } from "./constants.js";
+import { AUSD, PLATFORM_FEE_BPS } from "./constants";
 
 export function toBaseUnits(amount: string | number, decimals: number = AUSD.decimals): bigint {
   const str = typeof amount === "number" ? amount.toFixed(decimals) : amount.trim();

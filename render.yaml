@@ -5,9 +5,21 @@ services:
     plan: starter
     region: oregon
     branch: main
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web... build
-    startCommand: pnpm --filter web start
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
     healthCheckPath: /api/health
+    disk:
+      name: a-eye-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: A_EYE_DB_PATH
+        value: /var/data/a-eye.db
+      - key: A_EYE_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: ALLOW_UNPAID_QUESTIONS
+        value: "1"
+      # Cloudflare R2 (S3-compatible). Set S3_BUCKET, S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com,
+      # S3_REGION=auto, AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from the R2 API token.

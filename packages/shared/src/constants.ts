@@ -9,8 +9,3 @@ export const AUSD = {
 } as const;
 
 export const PLATFORM_FEE_BPS = 1000;
-
-export const MAX_GPS_ACCURACY_M = 75;
-export const MAX_CAPTURE_SKEW_MS = 2 * 60 * 1000;
-
-export const QUESTION_STATUSES = ["open", "closed", "settled", "expired"] as const;

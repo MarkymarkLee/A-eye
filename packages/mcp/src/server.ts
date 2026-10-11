@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { AskQuestionInput, askQuestionShape, type QuestionResults } from "@a-eye/shared";
+import { CreateQuestionInput, askQuestionShape, type QuestionResults } from "@a-eye/shared";
 import { z } from "zod";
 import type { AEyeApi } from "./api.js";
 
@@ -43,7 +43,7 @@ export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpS
     },
     async (args) => {
       try {
-        return json(await api.askQuestion(AskQuestionInput.parse(args)));
+        return json(await api.askQuestion(CreateQuestionInput.parse(args)));
       } catch (err) {
         return fail(err);
       }
@@ -116,7 +116,7 @@ export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpS
     "list_my_questions",
     {
       title: "List my questions",
-      description: "Questions this agent's wallet has asked.",
+      description: "Questions this agent has asked.",
       inputSchema: {},
     },
     async () => {
