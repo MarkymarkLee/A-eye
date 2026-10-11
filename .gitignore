@@ -8,3 +8,5 @@ next-env.d.ts
 .data
 apps/web/public/maplibre
 dist
+packages/mcp/build
+apps/web/public/downloads/a-eye.mcpb

@@ -67,8 +67,12 @@ const payingClient = new x402Client().register("eip155:84532", new ExactEvmSchem
 });
 const paidPost = wrapFetchWithPayment((input, init) => POST(new Request(input, init)), payingClient);
 
-async function askPaid(extra: Record<string, unknown> = {}) {
-  const res = await paidPost("http://a-eye.test/api/questions", { method: "POST", body: JSON.stringify(question(extra)) });
+async function askPaid(extra: Record<string, unknown> = {}, headers?: HeadersInit) {
+  const res = await paidPost("http://a-eye.test/api/questions", {
+    method: "POST",
+    body: JSON.stringify(question(extra)),
+    headers,
+  });
   expect(res.status).toBe(201);
   return { res, body: (await res.json()) as { question_id: string; payment_tx: string | null } };
 }
@@ -135,6 +139,13 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
     expect(facilitatorCalls).toEqual(expect.arrayContaining(["/supported", "/verify", "/settle"]));
     const mine = await store.questionsByAgent(agent.address, "http://a-eye.test");
     expect(mine.map((q) => q.id)).toContain(body.question_id);
+  });
+
+  it("stores paid questions under the supplied agent identity while preserving the payer", async () => {
+    const identity = "key:remote-agent-identity";
+    const { body } = await askPaid({}, { "x-a-eye-agent": identity });
+    expect((await store.questionsByAgent(identity, "http://a-eye.test")).map((q) => q.id)).toContain(body.question_id);
+    expect((await store.questionsByAgent(agent.address, "http://a-eye.test")).map((q) => q.id)).not.toContain(body.question_id);
   });
 
   it("finds questions when the queried agent label differs only by case", async () => {

@@ -1,0 +1,11 @@
+{
+  "name": "a-eye",
+  "description": "Ask nearby people location-based questions and receive fresh photo evidence.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Peyton Li"
+  },
+  "homepage": "https://a-eye-1zsv.onrender.com/agents",
+  "repository": "https://github.com/PeytonLi/A-eye",
+  "keywords": ["mcp", "x402", "location", "crowdsourcing", "ai-agents"]
+}

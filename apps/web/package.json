@@ -5,7 +5,7 @@
   "scripts": {
     "predev": "node scripts/copy-maplibre-worker.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-maplibre-worker.mjs",
+    "prebuild": "node scripts/copy-maplibre-worker.mjs && node scripts/copy-mcpb.mjs",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@a-eye/shared": "*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@aws-sdk/client-s3": "^3.1149.0",
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@radix-ui/react-collapsible": "^1.1.21",
