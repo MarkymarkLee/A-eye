@@ -10,6 +10,7 @@
  * answers, hitting max_responses, so the raffle draws and the treasury pays the winner
  * (pot minus 10%).  5. A second paid question expires with no answers and is refunded.
  */
+import { randomBytes } from "node:crypto";
 import { AUSD } from "@a-eye/shared";
 import sharp from "sharp";
 import { createPublicClient, erc20Abi, formatUnits, http, type Hex } from "viem";
@@ -18,6 +19,12 @@ import { baseSepolia } from "viem/chains";
 import { agentPrivateKey, createPayingFetch, paymentTxFromHeaders } from "../packages/mcp/src/payments.ts";
 
 const API = process.env.A_EYE_API_URL ?? "http://localhost:3000";
+const configuredPayoutTimeout = Number(process.env.DEMO_PAYOUT_TIMEOUT_MS);
+const DEMO_PAYOUT_TIMEOUT_MS =
+  process.env.DEMO_PAYOUT_TIMEOUT_MS && Number.isFinite(configuredPayoutTimeout) && configuredPayoutTimeout >= 0
+    ? configuredPayoutTimeout
+    : 120_000;
+let payoutFlowMissing = false;
 const SPOT = { lat: 37.8716, lng: -122.2536 };
 const scan = (tx: string | null | undefined) => (tx ? `https://sepolia.basescan.org/tx/${tx}` : "(none)");
 const chain = createPublicClient({ chain: baseSepolia, transport: http(process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org") });
@@ -41,6 +48,34 @@ async function json(res: Response) {
   return body;
 }
 
+const questionResults = (id: string) => fetch(`${API}/api/questions/${id}`).then(json);
+
+async function pollQuestion(
+  id: string,
+  label: string,
+  isComplete: (result: any) => boolean,
+  status: (result: any) => string | undefined,
+) {
+  const deadline = Date.now() + DEMO_PAYOUT_TIMEOUT_MS;
+  let result = await questionResults(id);
+  let nextStatusLog = Date.now() + 15_000;
+  while (!isComplete(result) && Date.now() < deadline) {
+    await sleep(Math.min(5_000, Math.max(0, deadline - Date.now())));
+    result = await questionResults(id);
+    if (!isComplete(result) && Date.now() >= nextStatusLog) {
+      console.log(`   ${label} pending (status ${status(result) ?? "unknown"})`);
+      nextStatusLog = Date.now() + 15_000;
+    }
+  }
+  if (!isComplete(result)) {
+    console.error(
+      `   ${label} not seen within ${DEMO_PAYOUT_TIMEOUT_MS / 1000}s (status ${status(result) ?? "unknown"})`,
+    );
+    payoutFlowMissing = true;
+  }
+  return result;
+}
+
 async function ask(prize_usd: number, extra: Record<string, unknown>) {
   const res = await pay(`${API}/api/questions`, {
     method: "POST",
@@ -58,8 +93,8 @@ async function observer(name: string, evm: string) {
   return cookie;
 }
 
-async function answer(cookie: string, id: string, option: number, seed: number) {
-  const jpeg = await sharp({ create: { width: 64, height: 48, channels: 3, background: { r: seed * 40, g: 120, b: 200 - seed * 30 } } }).jpeg().toBuffer();
+async function answer(cookie: string, id: string, option: number) {
+  const jpeg = await sharp(randomBytes(64 * 48 * 3), { raw: { width: 64, height: 48, channels: 3 } }).jpeg().toBuffer();
   const form = new FormData();
   form.set("option_index", String(option));
   form.set("lat", String(SPOT.lat));
@@ -78,7 +113,7 @@ console.log(`   question ${q1.id} bounty tx ${scan(q1.tx)}`);
 
 const a = await observer("Live Demo A", winners[0]!);
 const b = await observer("Live Demo B", winners[1]!);
-await answer(a, q1.id, 0, 1);
+await answer(a, q1.id, 0);
 console.log("2) Observer A answered");
 
 const sealed = await json(await fetch(`${API}/api/questions/${q1.id}`));
@@ -88,27 +123,30 @@ const peek = await json(peekRes);
 const peekTx = peek.payment_tx ?? paymentTxFromHeaders(peekRes.headers);
 console.log(`   peek paid=${peek.paid} tally=${JSON.stringify(peek.tally)} pot=${peek.pot_usd} tx ${scan(peekTx)}`);
 
-await answer(b, q1.id, 1, 2);
+await answer(b, q1.id, 1);
 console.log("4) Observer B answered (max_responses reached → raffle + payout)");
-let r1 = await json(await fetch(`${API}/api/questions/${q1.id}`));
-for (let i = 0; i < 30 && !r1.raffle.payout_tx; i++) {
-  await sleep(3000);
-  r1 = await json(await fetch(`${API}/api/questions/${q1.id}`));
-}
+const r1 = await pollQuestion(
+  q1.id,
+  "payout",
+  (result) => Boolean(result.raffle?.payout_tx),
+  (result) => result.raffle?.payout_status,
+);
 console.log(`   status ${r1.status}, winner ${r1.raffle.winner_observer}, payout ${r1.raffle.prize_amount} AUSD tx ${scan(r1.raffle.payout_tx)}`);
 
 console.log("\n5) Agent pays a 0.05 AUSD bounty for a question nobody answers (min 3, closes in 1 min)");
 const q2 = await ask(0.05, { min_responses: 3, max_responses: 5, closes_in_minutes: 1 });
 console.log(`   question ${q2.id} bounty tx ${scan(q2.tx)}`);
 await sleep(62_000);
-let r2 = await json(await fetch(`${API}/api/questions/${q2.id}`));
-for (let i = 0; i < 30 && !r2.ausd_flows?.some((f: { kind: string }) => f.kind === "refund"); i++) {
-  await sleep(3000);
-  r2 = await json(await fetch(`${API}/api/questions/${q2.id}`));
-}
+const r2 = await pollQuestion(
+  q2.id,
+  "refund",
+  (result) => result.ausd_flows?.some((f: { kind: string }) => f.kind === "refund") ?? false,
+  (result) => result.status,
+);
 const refund = r2.ausd_flows?.find((f: { kind: string }) => f.kind === "refund");
 console.log(`   status ${r2.status}, refund ${refund?.amount} AUSD tx ${scan(refund?.tx)}`);
 
 console.log("\nAUSD flows:");
 for (const f of [...r1.ausd_flows, ...r2.ausd_flows]) console.log(`   ${f.kind.padEnd(7)} ${String(f.amount).padStart(5)} AUSD  ${f.from_label} → ${f.to_label}  ${f.url}`);
 await balances("after");
+if (payoutFlowMissing) process.exitCode = 1;

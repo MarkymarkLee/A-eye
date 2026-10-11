@@ -11,7 +11,13 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
 const transferAusdViaFacilitator = vi.fn();
-vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd, transferAusdViaFacilitator }));
+const ausdBalance = vi.fn();
+vi.mock("./chain", async (orig) => ({
+  ...(await orig<typeof import("./chain")>()),
+  transferAusd,
+  transferAusdViaFacilitator,
+  ausdBalance,
+}));
 
 const TREASURY = "0x293214291186180810902D97994c2C72fE88255A";
 const TREASURY_KEY = generatePrivateKey();
@@ -77,6 +83,7 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   beforeEach(() => {
     transferAusd.mockReset();
     transferAusd.mockResolvedValue(PAYOUT_TX);
+    ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
     // Payouts fall back to the direct rail when the facilitator can't submit.
     transferAusdViaFacilitator
       .mockReset()

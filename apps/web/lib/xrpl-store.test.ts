@@ -25,7 +25,13 @@ vi.mock("./xrpl", async (orig) => ({ ...(await orig<typeof import("./xrpl")>()),
 const { XrplError } = await import("./xrpl");
 const transferAusd = vi.fn();
 const transferAusdViaFacilitator = vi.fn();
-vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd, transferAusdViaFacilitator }));
+const ausdBalance = vi.fn().mockResolvedValue(10n ** 12n);
+vi.mock("./chain", async (orig) => ({
+  ...(await orig<typeof import("./chain")>()),
+  transferAusd,
+  transferAusdViaFacilitator,
+  ausdBalance,
+}));
 
 vi.stubEnv("A_EYE_DB_PATH", ":memory:");
 vi.stubEnv("A_EYE_UPLOAD_DIR", mkdtempSync(path.join(tmpdir(), "a-eye-xrpl-")));
@@ -102,6 +108,7 @@ describe("XRPL wiring with testnet wallets configured", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     for (const fn of Object.values(xrpl)) fn.mockReset();
     transferAusd.mockReset();
+    ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
     let seq = 100;
     xrpl.createPotEscrow.mockImplementation(async (amountXrp: string) => ({
       hash: hash("e"),
@@ -195,6 +202,32 @@ describe("XRPL wiring with testnet wallets configured", () => {
       prize: 0.9,
       currency: "RLUSD",
     });
+  });
+
+  it("does not backfill an AUSD payout for an escrow-paid XRPL winner", async () => {
+    const id = ask();
+    store.db()
+      .prepare("update questions set payer_address = ?, payment_tx = ? where id = ?")
+      .run("0x0000000000000000000000000000000000000001", `0x${"aa".repeat(32)}`, id);
+    await store.escrowQuestionPot(id);
+    const obs = store.getOrCreateObserver(undefined);
+    store.updateObserver(obs.id, {
+      evm_address: `0x${"33".repeat(20)}`,
+      xrpl_address: WINNER,
+      payout_rail: "xrpl",
+    });
+    await answer(id, obs.id);
+    advance(20_000);
+    await store.closeNow(id);
+    const results = (await store.getResults(id, ORIGIN))!;
+    expect(results.status).toBe("settled");
+    expect(results.raffle.xrpl).toMatchObject({ state: "finished" });
+    expect(results.raffle.payout_tx).toBeUndefined();
+    expect(transferAusdViaFacilitator).not.toHaveBeenCalled();
+    expect(transferAusd).not.toHaveBeenCalled();
+
+    store.backfillTreasuryTransfers();
+    expect(store.db().prepare("select * from treasury_transfers where question_id = ? and kind = 'payout'").get(id)).toBeUndefined();
   });
 
   it("falls back to sequential settlement when Batch is unavailable", async () => {
