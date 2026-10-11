@@ -16,7 +16,8 @@ export const XRPL_DEVNET_WSS = "wss://s.devnet.rippletest.net:51233";
 export const LENDING_AMENDMENTS = ["SingleAssetVault", "LendingProtocol", "LendingProtocolV1_1"] as const;
 
 export const DEMO_TERMS = {
-  depositXrp: "40",
+  depositXrp: "20",
+  sponsorDepositXrp: "20",
   coverXrp: "5",
   principalXrp: "20",
   bountyPotXrp: "5",
@@ -74,12 +75,16 @@ export function buildCoverDeposit(broker: string, lbId: string): LoanBrokerCover
   };
 }
 
-export function buildVaultDeposit(dep: string, vaultId: string): VaultDeposit {
+export function buildVaultDeposit(
+  dep: string,
+  vaultId: string,
+  amountXrp: string = DEMO_TERMS.depositXrp,
+): VaultDeposit {
   return {
     TransactionType: "VaultDeposit",
     Account: dep,
     VaultID: vaultId,
-    Amount: xrpToDrops(DEMO_TERMS.depositXrp),
+    Amount: xrpToDrops(amountXrp),
   };
 }
 
@@ -162,13 +167,14 @@ export type VaultStepKey =
   | "broker_set"
   | "cover_deposit"
   | "vault_deposit"
+  | "sponsor_deposit"
   | "loan_set"
   | "bounty_pot"
   | "bounty_paid"
   | "loan_pay"
   | "loan_delete"
   | "vault_withdraw";
-export type VaultRole = "broker" | "depositor" | "borrower" | "observer";
+export type VaultRole = "broker" | "depositor" | "sponsor" | "borrower" | "observer";
 export type VaultStep = {
   key: VaultStepKey;
   role: VaultRole;
@@ -185,6 +191,7 @@ export type VaultRun = {
   share_mpt_id: string;
   loan_broker_id: string;
   loan_id: string;
+  vault_account: string;
   accounts: Record<VaultRole, string>;
   subscription_date: string;
   redemption_date: string;
@@ -195,6 +202,8 @@ export type VaultRun = {
   shares_outstanding: string;
   depositor_deposit_drops: string;
   depositor_withdraw_drops: string;
+  assets_total_after_withdraw_drops: string;
+  shares_after_withdraw: string;
   steps: VaultStep[];
 };
 export type VaultLoanView = {
@@ -230,6 +239,7 @@ const STEP_KEYS: readonly VaultStepKey[] = [
   "broker_set",
   "cover_deposit",
   "vault_deposit",
+  "sponsor_deposit",
   "loan_set",
   "bounty_pot",
   "bounty_paid",
@@ -237,7 +247,7 @@ const STEP_KEYS: readonly VaultStepKey[] = [
   "loan_delete",
   "vault_withdraw",
 ];
-const ROLES: readonly VaultRole[] = ["broker", "depositor", "borrower", "observer"];
+const ROLES: readonly VaultRole[] = ["broker", "depositor", "sponsor", "borrower", "observer"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -259,6 +269,7 @@ export function isVaultRun(value: unknown): value is VaultRun {
     "share_mpt_id",
     "loan_broker_id",
     "loan_id",
+    "vault_account",
     "subscription_date",
     "redemption_date",
     "principal_drops",
@@ -268,6 +279,8 @@ export function isVaultRun(value: unknown): value is VaultRun {
     "shares_outstanding",
     "depositor_deposit_drops",
     "depositor_withdraw_drops",
+    "assets_total_after_withdraw_drops",
+    "shares_after_withdraw",
   ] as const;
   if (!stringKeys.every((key) => typeof value[key] === "string")) return false;
   if (
@@ -285,6 +298,8 @@ export function isVaultRun(value: unknown): value is VaultRun {
     "shares_outstanding",
     "depositor_deposit_drops",
     "depositor_withdraw_drops",
+    "assets_total_after_withdraw_drops",
+    "shares_after_withdraw",
   ] as const;
   if (!dropsKeys.every((key) => /^\d+$/.test(value[key] as string))) return false;
   const accounts = value.accounts;
@@ -329,16 +344,16 @@ export function vaultViewFromRun(
   },
 ): VaultView {
   const isLive = Boolean(live?.vault);
-  const total = isLive ? live!.vault!.AssetsTotal : run.assets_total_after_repay_drops;
-  const available = isLive ? live!.vault!.AssetsAvailable : run.assets_total_after_repay_drops;
-  const shares = (isLive ? live!.vault!.shares?.OutstandingAmount : undefined) ?? run.shares_outstanding;
+  const total = isLive ? live!.vault!.AssetsTotal : run.assets_total_after_withdraw_drops;
+  const available = isLive ? live!.vault!.AssetsAvailable : run.assets_total_after_withdraw_drops;
+  const shares = (isLive ? live!.vault!.shares?.OutstandingAmount : undefined) ?? run.shares_after_withdraw;
   const loanStep = run.steps.find((step) => step.key === "loan_set");
   const open = isLive && Boolean(live?.loan);
   return {
     source: isLive ? "live" : "recorded",
     network: "devnet",
     vault_id: run.vault_id,
-    vault_explorer_url: devnetAccount(run.accounts.broker),
+    vault_explorer_url: devnetAccount(run.vault_account),
     tvl_drops: total,
     available_drops: available,
     shares_outstanding: shares,
@@ -370,21 +385,29 @@ export function vaultViewFromRun(
 }
 
 export function simulatedVaultView(): VaultView {
-  const depositDrops = Number(xrpToDrops(DEMO_TERMS.depositXrp));
+  const depositorDrops = Number(xrpToDrops(DEMO_TERMS.depositXrp));
+  const sponsorDrops = Number(xrpToDrops(DEMO_TERMS.sponsorDepositXrp));
+  const sharesBeforeWithdrawal = depositorDrops + sponsorDrops;
   const grossInterest = projectedInterestDrops();
   const netInterest = grossInterest * (1 - DEMO_TERMS.managementFeeRate / 100000);
-  const tvl = amountToView(depositDrops + netInterest);
+  const assetsBeforeWithdrawal = amountToView(sharesBeforeWithdrawal + netInterest);
+  const assetsAfterWithdrawal = amountToView(
+    Number(assetsBeforeWithdrawal) - Math.floor((Number(assetsBeforeWithdrawal) * depositorDrops) / sharesBeforeWithdrawal),
+  );
+  const depositorWithdrawal = String(Number(assetsBeforeWithdrawal) - Number(assetsAfterWithdrawal));
+  const tvl = assetsAfterWithdrawal;
   const steps: VaultStep[] = [
     ["vault_create", "broker", "VaultCreate", "Create a closed-ended XRP vault", null],
     ["broker_set", "broker", "LoanBrokerSet", "Configure A-eye as loan broker", null],
     ["cover_deposit", "broker", "LoanBrokerCoverDeposit", "Post loan-broker cover", xrpToDrops(DEMO_TERMS.coverXrp)],
     ["vault_deposit", "depositor", "VaultDeposit", "Deposit XRP and receive vault shares", xrpToDrops(DEMO_TERMS.depositXrp)],
+    ["sponsor_deposit", "sponsor", "VaultDeposit", "Sponsor XRP and keep shares invested", xrpToDrops(DEMO_TERMS.sponsorDepositXrp)],
     ["loan_set", "broker", "LoanSet", "Create a counterparty-signed XRP loan", xrpToDrops(DEMO_TERMS.principalXrp)],
     ["bounty_pot", "borrower", "EscrowCreate", "Escrow the observer bounty pot", xrpToDrops(DEMO_TERMS.bountyPotXrp)],
     ["bounty_paid", "observer", "EscrowFinish", "Release the bounty to the human observer", xrpToDrops(DEMO_TERMS.bountyPotXrp)],
     ["loan_pay", "borrower", "LoanPay", "Repay principal, interest, and service fee", null],
     ["loan_delete", "borrower", "LoanDelete", "Close the repaid loan", null],
-    ["vault_withdraw", "depositor", "VaultWithdraw", "Redeem shares with yield at maturity", tvl],
+    ["vault_withdraw", "depositor", "VaultWithdraw", "Redeem shares with yield at maturity", depositorWithdrawal],
   ].map(([key, role, tx_type, label, amount_drops]) => ({
     key: key as VaultStepKey,
     role: role as VaultRole,
@@ -401,12 +424,12 @@ export function simulatedVaultView(): VaultView {
     vault_explorer_url: null,
     tvl_drops: tvl,
     available_drops: tvl,
-    shares_outstanding: String(depositDrops),
-    share_price: sharePrice(tvl, String(depositDrops)),
+    shares_outstanding: String(sponsorDrops),
+    share_price: sharePrice(tvl, String(sponsorDrops)),
     phase: "subscription",
     subscription_date: null,
     redemption_date: null,
-    depositor_yield_drops: amountToView(netInterest),
+    depositor_yield_drops: String(Number(depositorWithdrawal) - depositorDrops),
     loans: [
       {
         loan_id: null,

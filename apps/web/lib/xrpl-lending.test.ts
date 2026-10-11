@@ -33,9 +33,11 @@ const run: VaultRun = {
   share_mpt_id: "B".repeat(64),
   loan_broker_id: "C".repeat(64),
   loan_id: "D".repeat(64),
+  vault_account: "rVaultPseudoAccount",
   accounts: {
     broker: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
     depositor: "rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH",
+    sponsor: "rSponsorAccount",
     borrower: "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
     observer: "rJ1h2r9W1e3B5D8zK7cA4pQ6sT9vX3mN",
   },
@@ -46,9 +48,20 @@ const run: VaultRun = {
   assets_total_before_repay_drops: "40000000",
   assets_total_after_repay_drops: "40000070",
   shares_outstanding: "40000000",
-  depositor_deposit_drops: "40000000",
-  depositor_withdraw_drops: "40000070",
+  depositor_deposit_drops: "20000000",
+  depositor_withdraw_drops: "20000035",
+  assets_total_after_withdraw_drops: "20000035",
+  shares_after_withdraw: "20000000",
   steps: [
+    {
+      key: "sponsor_deposit",
+      role: "sponsor",
+      tx_type: "VaultDeposit",
+      label: "Keep sponsor XRP invested in the vault",
+      hash: "SPONSOR_TX",
+      amount_drops: "20000000",
+      at: "2026-10-11T20:00:50.000Z",
+    },
     {
       key: "loan_set",
       role: "broker",
@@ -88,7 +101,11 @@ describe("XRPL lending transaction builders", () => {
     });
     expect(buildVaultDeposit("depositor", "VAULT")).toMatchObject({
       TransactionType: "VaultDeposit",
-      Amount: "40000000",
+      Amount: "20000000",
+    });
+    expect(buildVaultDeposit("sponsor", "VAULT", DEMO_TERMS.sponsorDepositXrp)).toMatchObject({
+      TransactionType: "VaultDeposit",
+      Amount: "20000000",
     });
   });
 
@@ -136,7 +153,8 @@ describe("XRPL lending transaction builders", () => {
   it("provides the Devnet constants and amount projections", () => {
     expect(XRPL_DEVNET_WSS).toBe("wss://s.devnet.rippletest.net:51233");
     expect(LENDING_AMENDMENTS).toEqual(["SingleAssetVault", "LendingProtocol", "LendingProtocolV1_1"]);
-    expect(DEMO_TERMS.depositXrp).toBe("40");
+    expect(DEMO_TERMS.depositXrp).toBe("20");
+    expect(DEMO_TERMS.sponsorDepositXrp).toBe("20");
     expect(devnetTx("HASH")).toBe("https://devnet.xrpl.org/transactions/HASH");
     expect(devnetAccount("rADDRESS")).toBe("https://devnet.xrpl.org/accounts/rADDRESS");
     expect(loanPayDrops({ PeriodicPayment: "20000076.10349944904", LoanServiceFee: "10000" })).toBe("20010078");
@@ -154,18 +172,21 @@ describe("XRPL vault views", () => {
     expect(isVaultRun({ ...run, subscription_date: "not-a-date" })).toBe(false);
     expect(vaultViewFromRun(run)).toMatchObject({
       source: "recorded",
-      tvl_drops: "40000070",
-      available_drops: "40000070",
+      vault_explorer_url: "https://devnet.xrpl.org/accounts/rVaultPseudoAccount",
+      tvl_drops: "20000035",
+      available_drops: "20000035",
+      shares_outstanding: "20000000",
       share_price: 1.00000175,
-      depositor_yield_drops: "70",
+      depositor_yield_drops: "35",
       loans: [{ status: "repaid", outstanding_drops: "0" }],
     });
+    expect(vaultViewFromRun(run).steps.map((step) => step.key)).toContain("sponsor_deposit");
     expect(
       vaultViewFromRun(run, {
         vault: {
-          AssetsTotal: "40000070",
-          AssetsAvailable: "40000070",
-          shares: { OutstandingAmount: "40000000" },
+          AssetsTotal: "20000035",
+          AssetsAvailable: "20000035",
+          shares: { OutstandingAmount: "20000000" },
         },
         loan: null,
         closeTimeIso: "2026-10-11T20:05:00.000Z",
@@ -181,8 +202,14 @@ describe("XRPL vault views", () => {
 
   it("returns a fully labeled simulation with no transaction hashes", () => {
     const view = simulatedVaultView();
-    expect(view).toMatchObject({ source: "simulated", network: "devnet", vault_id: null });
-    expect(view.steps).toHaveLength(10);
+    expect(view).toMatchObject({
+      source: "simulated",
+      network: "devnet",
+      vault_id: null,
+      shares_outstanding: "20000000",
+    });
+    expect(view.steps).toHaveLength(11);
+    expect(view.steps.map((step) => step.key)).toContain("sponsor_deposit");
     expect(view.steps.every((step) => step.hash === null && step.explorer_url === null && step.label.length > 0)).toBe(
       true,
     );

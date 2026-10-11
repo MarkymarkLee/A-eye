@@ -33,6 +33,7 @@ const SNAPSHOT_FILE = resolve(process.cwd(), "apps/web/data/xrpl-vault-run.json"
 const ROLE_ENV_KEYS = {
   broker: "XRPL_VAULT_BROKER_SEED",
   depositor: "XRPL_VAULT_DEPOSITOR_SEED",
+  sponsor: "XRPL_VAULT_SPONSOR_SEED",
   borrower: "XRPL_VAULT_BORROWER_SEED",
   observer: "XRPL_VAULT_OBSERVER_SEED",
 } as const satisfies Record<VaultRole, string>;
@@ -278,6 +279,21 @@ async function main(): Promise<void> {
       xrpToDrops(DEMO_TERMS.depositXrp),
     );
 
+    const sponsorDeposit = (await client.submitAndWait(
+      buildVaultDeposit(accounts.sponsor, vaultId, DEMO_TERMS.sponsorDepositXrp),
+      { autofill: true, wallet: wallets.sponsor },
+    )) as unknown as TxReceipt;
+    ensureSuccess("sponsor_deposit", sponsorDeposit);
+    recordStep(
+      steps,
+      "sponsor",
+      "sponsor_deposit",
+      "VaultDeposit",
+      "Keep sponsor XRP invested in the vault",
+      sponsorDeposit,
+      xrpToDrops(DEMO_TERMS.sponsorDepositXrp),
+    );
+
     await waitUntilValidatedTime(client, subscription);
 
     const loanSetTx = await client.autofill(buildLoanSet(accounts.broker, accounts.borrower, loanBrokerId));
@@ -298,6 +314,8 @@ async function main(): Promise<void> {
 
     const vaultResponse = await client.request({ command: "vault_info", vault_id: vaultId, ledger_index: "validated" });
     const shareMptId = vaultResponse.result.vault.ShareMPTID;
+    const vaultAccount = vaultResponse.result.vault.Account;
+    if (typeof vaultAccount !== "string") throw new Error("vault_account_missing");
     const assetsBeforeRepay = vaultResponse.result.vault.AssetsTotal ?? "0";
     const sharesOutstanding = vaultResponse.result.vault.shares.OutstandingAmount;
     const loanResponse = await client.request({
@@ -399,6 +417,14 @@ async function main(): Promise<void> {
       withdrawDrops,
     );
 
+    const postWithdrawVault = await client.request({
+      command: "vault_info",
+      vault_id: vaultId,
+      ledger_index: "validated",
+    });
+    const assetsAfterWithdraw = postWithdrawVault.result.vault.AssetsTotal ?? "0";
+    const sharesAfterWithdraw = postWithdrawVault.result.vault.shares.OutstandingAmount ?? "0";
+
     const run: VaultRun = {
       network: "devnet",
       ran_at: new Date().toISOString(),
@@ -406,6 +432,7 @@ async function main(): Promise<void> {
       share_mpt_id: shareMptId,
       loan_broker_id: loanBrokerId,
       loan_id: loanId,
+      vault_account: vaultAccount,
       accounts,
       subscription_date: rippleDate(subscription),
       redemption_date: rippleDate(redemption),
@@ -416,6 +443,8 @@ async function main(): Promise<void> {
       shares_outstanding: sharesOutstanding,
       depositor_deposit_drops: xrpToDrops(DEMO_TERMS.depositXrp),
       depositor_withdraw_drops: withdrawDrops,
+      assets_total_after_withdraw_drops: assetsAfterWithdraw,
+      shares_after_withdraw: sharesAfterWithdraw,
       steps,
     };
     if (!process.argv.includes("--no-snapshot")) {
@@ -423,13 +452,13 @@ async function main(): Promise<void> {
     }
 
     const beforePrice = Number(assetsBeforeRepay) / Number(sharesOutstanding);
-    const afterPrice = Number(assetsAfterRepay) / Number(sharesOutstanding);
+    const afterPrice = Number(assetsAfterWithdraw) / Number(sharesAfterWithdraw);
     console.log(
       `Summary: deposit=${run.depositor_deposit_drops} drops withdraw=${run.depositor_withdraw_drops} drops yield=${(
         BigInt(run.depositor_withdraw_drops) - BigInt(run.depositor_deposit_drops)
       ).toString()} drops share_price_before=${beforePrice} share_price_after=${afterPrice}`,
     );
-    console.log(`Vault: ${vaultId} ${devnetAccount(accounts.broker)}`);
+    console.log(`Vault: ${vaultId} ${devnetAccount(vaultAccount)}`);
     console.log(`Snapshot: ${process.argv.includes("--no-snapshot") ? "not written (--no-snapshot)" : SNAPSHOT_FILE}`);
   } finally {
     if (client.isConnected()) await client.disconnect();
