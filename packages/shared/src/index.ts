@@ -34,6 +34,8 @@ export const CreateQuestionInput = z.object({
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),
   market_ref: MarketRef.optional(),
+  /** Lock the pot in an XRPL testnet escrow (no-op when the server has no XRPL wallets configured). */
+  xrpl_escrow: z.boolean().optional(),
 });
 export type CreateQuestionInput = z.infer<typeof CreateQuestionInput>;
 
@@ -61,6 +63,25 @@ export type Evidence = {
   observer: string;
 };
 
+export const PayoutRail = z.enum(["evm", "xrpl"]);
+export type PayoutRail = z.infer<typeof PayoutRail>;
+
+/** XRPL testnet pot escrow for a question; tx fields are hashes, *_url are explorer links. */
+export type XrplPotInfo = {
+  state: "escrowed" | "settling" | "finished" | "canceled";
+  amount_xrp: string;
+  owner: string;
+  offer_sequence: number;
+  escrow_tx: string;
+  escrow_url: string;
+  finish_tx?: string;
+  finish_url?: string;
+  payout_tx?: string;
+  payout_url?: string;
+  cancel_tx?: string;
+  cancel_url?: string;
+};
+
 export type RaffleInfo = {
   seed_commit: string;
   seed_reveal?: string;
@@ -71,6 +92,8 @@ export type RaffleInfo = {
   prize_amount: number;
   currency: string;
   payout_tx?: string;
+  payout_url?: string;
+  xrpl?: XrplPotInfo;
 };
 
 export type QuestionSummary = {
@@ -120,6 +143,7 @@ export type CreateQuestionResponse = {
   gallery_url: string;
   seed_commit: string;
   payment_tx: string | null;
+  xrpl_escrow_tx?: string | null;
   place_context?: unknown;
   web_baseline?: unknown;
 };
