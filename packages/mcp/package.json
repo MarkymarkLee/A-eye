@@ -2,6 +2,7 @@
   "name": "a-eye-mcp",
   "version": "0.1.0",
   "description": "MCP server for asking real people location-based questions with x402 payments",
+  "license": "MIT",
   "type": "module",
   "keywords": ["mcp", "x402", "ai-agents", "location", "crowdsourcing"],
   "repository": {
