@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: a-eye
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web... build
+    startCommand: pnpm --filter web start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
