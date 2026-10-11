@@ -1,7 +1,7 @@
 import "server-only";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   PLATFORM_FEE,
@@ -140,6 +140,10 @@ type XrplEscrowRow = {
 };
 
 const SCHEMA = `
+create table if not exists meta (
+  key text primary key,
+  value text not null
+);
 create table if not exists observers (
   id text primary key,
   display_name text not null,
@@ -333,6 +337,38 @@ export function getOrCreateObserver(id: string | undefined): Observer {
     .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
     .run(obs.id, obs.display_name, obs.created_at);
   return obs;
+}
+
+export function getObserver(id: string): Observer | undefined {
+  const row = db().prepare("select * from observers where id = ?").get(id);
+  return row ? toObserver(row as Record<string, unknown>) : undefined;
+}
+
+export function createObserver(): Observer {
+  const obs: Observer = {
+    id: randomUUID(),
+    display_name: `observer-${shortId().slice(0, 4)}`,
+    payout_rail: "evm",
+    created_at: new Date().toISOString(),
+  };
+  db()
+    .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
+    .run(obs.id, obs.display_name, obs.created_at);
+  return obs;
+}
+
+let cachedCookieSecret: string | undefined;
+
+export function cookieSecret(): string {
+  if (process.env.A_EYE_COOKIE_SECRET && process.env.A_EYE_COOKIE_SECRET.length >= 32) {
+    return process.env.A_EYE_COOKIE_SECRET;
+  }
+  if (cachedCookieSecret) return cachedCookieSecret;
+  const generated = randomBytes(32).toString("hex");
+  db().prepare("insert or ignore into meta (key, value) values ('observer_cookie_secret', ?)").run(generated);
+  const row = db().prepare("select value from meta where key = 'observer_cookie_secret'").get() as { value: string };
+  cachedCookieSecret = row.value;
+  return cachedCookieSecret;
 }
 
 export function updateObserver(

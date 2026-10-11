@@ -1,4 +1,5 @@
 import { mkdtempSync } from "node:fs";
+import type { EventEmitter as EventEmitterType } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,20 +11,32 @@ vi.mock("node:dns", () => ({
     lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
   },
 }));
+const { webhookPosts } = vi.hoisted(() => ({
+  webhookPosts: [] as Array<{ url: string; body: Record<string, unknown> }>,
+}));
+vi.mock("node:https", async () => {
+  const { EventEmitter } = await import("node:events");
+  return {
+    request: vi.fn((options: { hostname: string; path: string }) => {
+      const request = new EventEmitter() as EventEmitterType & {
+        end: (body: string) => void;
+        destroy: (error: Error) => void;
+      };
+      request.end = (body: string) => {
+        webhookPosts.push({ url: `https://${options.hostname}${options.path}`, body: JSON.parse(body) as Record<string, unknown> });
+        const response = new EventEmitter() as EventEmitterType & { statusCode: number; resume: () => void };
+        response.statusCode = 204;
+        response.resume = () => queueMicrotask(() => response.emit("end"));
+        request.emit("response", response);
+      };
+      request.destroy = (error: Error) => request.emit("error", error);
+      return request;
+    }),
+  };
+});
 
 vi.stubEnv("A_EYE_DB_PATH", ":memory:");
 vi.stubEnv("A_EYE_UPLOAD_DIR", mkdtempSync(path.join(tmpdir(), "a-eye-settlement-")));
-
-const webhookPosts: Array<{ url: string; body: Record<string, unknown> }> = [];
-const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  const url = String(input instanceof Request ? input.url : input);
-  if (url === "https://hooks.example.com/x") {
-    webhookPosts.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
-    return new Response(null, { status: 204 });
-  }
-  throw new Error("offline");
-}) as typeof fetch;
 
 const store = await import("./store");
 const { startSettlementSweep, stopSettlementSweep } = await import("./sweep");
@@ -74,7 +87,6 @@ afterEach(() => {
 });
 
 afterAll(() => {
-  globalThis.fetch = realFetch;
   vi.unstubAllEnvs();
 });
 
