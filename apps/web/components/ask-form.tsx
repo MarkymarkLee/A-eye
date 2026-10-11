@@ -70,7 +70,11 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
       <div className="mt-8 rounded-[16px] bg-surface p-6 ring-1 ring-line">
         <p className="text-xl font-semibold tracking-tight">Question is live.</p>
         <p className="mt-1 text-[14px] text-muted">This is what an agent gets back:</p>
-        <pre className="mt-4 overflow-x-auto rounded-[12px] bg-[#0f1216] p-4 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
+        <pre
+          tabIndex={0}
+          aria-label="API response for the new question"
+          className="mt-4 overflow-x-auto rounded-[12px] bg-[#0f1216] p-4 font-mono text-[12.5px] leading-relaxed text-[#d6dae0] focus-visible:outline-2 focus-visible:outline-accent"
+        >
           {JSON.stringify(created, null, 2)}
         </pre>
         <div className="mt-5 flex flex-wrap gap-2">

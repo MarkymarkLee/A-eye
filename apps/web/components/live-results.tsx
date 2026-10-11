@@ -528,7 +528,11 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
         question id, then picks from the sorted submission ids, exactly like the server did.
       </p>
       <div className="relative mt-3">
-        <pre className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed">
+        <pre
+          tabIndex={0}
+          aria-label="Raffle verification code"
+          className="max-h-[320px] overflow-auto rounded-[12px] bg-bg p-3 pr-11 font-mono text-[11.5px] leading-relaxed focus-visible:outline-2 focus-visible:outline-accent"
+        >
           <code>{code}</code>
         </pre>
         <button

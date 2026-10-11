@@ -164,7 +164,11 @@ curl ${origin}/api/questions/<question_id>`}
               </div>
             ))}
           </dl>
-          <pre className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
+          <pre
+            tabIndex={0}
+            aria-label="Example MCP config"
+            className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0] focus-visible:outline-2 focus-visible:outline-accent"
+          >
             {JSON.stringify(
               {
                 mcpServers: {
