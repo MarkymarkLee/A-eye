@@ -9,7 +9,7 @@ A-eye lets an AI agent ask a question about a real place. Nearby people answer w
 - `packages/shared`: shared request schemas and API types.
 - `apps/demo-agent`: standalone ask and Gemini Predictions oracle demos.
 - `apps/web/lib/store.ts`: SQLite schema, question/submission operations, settlement, and raffle.
-- `scripts/xrpl-*.ts` and `apps/web/lib/xrpl.ts`: optional, standalone XRPL testnet demos.
+- `scripts/xrpl-*.ts` and `apps/web/lib/xrpl.ts`: the optional XRPL Testnet rail (escrow, Batch settlement, RLUSD, MPT reputation, credentials).
 
 ## Develop
 
@@ -230,6 +230,66 @@ Sample output excerpt from a real local sandbox run:
 
 Observers can opt in to "new question near you" web push (installable PWA + `/sw.js`). Generate VAPID keys once with `npm run vapid:keys` and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` on Render — with none set, push is a silent no-op. Subscriptions are stored server-side with a coarse (~110 m) location, and one subscription hears about at most one question every 3 minutes (`PUSH_MIN_INTERVAL_SECONDS`).
 
+## XRPL: escrowed pots, RLUSD payouts, on-ledger reputation (Testnet)
+
+Observers who pick **RLUSD (XRP Ledger)** on `/me` are paid on the XRP Ledger Testnet. The XRPL rail combines five ledger features into one flow: the agent's prize is committed up front, the winner is paid in a dollar stablecoin, the platform fee is taken in the same atomic step, and the observer's track record lives on the ledger, not in our database.
+
+### Primitive map
+
+| Step in the A-eye flow | XRPL primitive | What it does |
+| :-- | :-- | :-- |
+| Agent posts a paid question | **Escrow** (`EscrowCreate`, XRP) | Locks the gross prize (quoted from the XRP/RLUSD AMM plus a 10% buffer) with `FinishAfter`/`CancelAfter`, so the pot is publicly committed before anyone answers. |
+| Raffle picks an XRPL-rail winner | **Batch** (XLS-56, `tfAllOrNothing`) | A single transaction runs `EscrowFinish`, the winner payout, and the platform-fee `Payment`. Either all three succeed or none does. |
+| Winner payout | **RLUSD** + **AMM** cross-currency `Payment` | `Amount` = RLUSD IOU (net prize), `SendMax` = released XRP minus the fee. The ledger converts XRP to RLUSD through the XRP/RLUSD AMM in the same payment. Winners with no RLUSD trust line receive XRP instead. |
+| Question expires unanswered | **Escrow** (`EscrowCancel`) | Refunds the pot to the treasury. |
+| Observer onboarding on `/me` | **Batch** (`TrustSet` + `MPTokenAuthorize`) | Signed in the browser with a local test wallet. One atomic transaction adds the RLUSD trust line and opts in to the reputation token. |
+| Each accepted answer | **Multi-Purpose Token** `AEYE` ("A-eye Verified Answers") | Asset scale 0, non-transferable, XLS-89 metadata. The issuer mints 1 AEYE per accepted answer, grouped into `tfIndependent` Batches, so the observer's reputation is portable and verifiable on-ledger. |
+| After N accepted answers | **Credentials** (`CredentialCreate` / `CredentialAccept`) | Issuer grants the "A-eye Verified Observer" credential, and the observer accepts it from `/me`. |
+
+**Why XRP escrow + AMM instead of RLUSD TokenEscrow:** `TokenEscrow` is enabled on Testnet, but the RLUSD Testnet issuer (`rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV`) does not set `asfAllowTrustLineLocking`, so RLUSD cannot be escrowed. We keep the commitment in XRP and deliver RLUSD at settlement through the AMM, all inside the same Batch, so the winner still receives dollars atomically.
+
+**Fallback:** if Batch fails (a `tem*`/`temDISABLED` result, a submit error, or any inner result other than `tesSUCCESS`), settlement falls back to sequential `EscrowFinish` → payout (RLUSD via the AMM, or XRP) → fee `Payment`. Each step is persisted, so retries are idempotent. Results show `settle_mode` (`batch` or `sequential`) and an explorer link for each transaction.
+
+Amendments checked live on Testnet (`feature` RPC): `BatchV1_1`, `fixBatchV1_2`, `TokenEscrow`, `fixTokenEscrowV1`, `MPTokensV1`, `Credentials` are all enabled.
+
+### Run the Testnet demo
+
+```sh
+npm run xrpl:setup -- --role treasury   # faucet wallet + RLUSD trust line + RLUSD liquidity; writes .env.xrpl.local (gitignored)
+npm run xrpl:setup -- --role issuer     # credential + reputation-token issuer
+npm run xrpl:setup -- --role observer   # a test observer wallet
+npm run xrpl:demo                       # onboarding Batch → escrow → settlement Batch → AEYE mint → credential
+```
+
+The demo prints every transaction hash, including each inner Batch transaction, with a `testnet.xrpl.org` link. It never prints seeds. To enable the rail in the app, set `XRPL_TREASURY_SEED` and `XRPL_ISSUER_SEED`. Optional variables: `XRPL_FEE_ADDRESS` (defaults to the issuer), `XRPL_REP_MPT_ID` (reuse an existing AEYE issuance), and `XRPL_XRP_PER_USD` (fixed rate instead of the AMM quote).
+
+### Explorer proof (Testnet)
+
+Live run of `npm run xrpl:demo` on 2026-10-11. Every transaction below is validated `tesSUCCESS`. The settlement Batch and its three inner transactions are all in ledger 21463486.
+
+| Step | Transaction |
+| :-- | :-- |
+| AEYE reputation MPT issuance | [`014781A9…9AFA`](https://testnet.xrpl.org/mpt/014781A9938471C652D0E54540BF792FC0E72163C0389AFA) |
+| Observer onboarding Batch (`TrustSet` + `MPTokenAuthorize`) | [`1EE0680F…746D`](https://testnet.xrpl.org/transactions/1EE0680FFFF4BFB3C6DF74D54DEAC711945BE390319A324B0C9966A9E501746D) |
+| Pot escrow, 3.904394 XRP gross (`EscrowCreate`) | [`B43663E8…6A79`](https://testnet.xrpl.org/transactions/B43663E81BA899A46F18736787E551550A13B58F8DD75A4DC12DE445C3B26A79) |
+| **Settlement Batch** (`tfAllOrNothing`) | [`3FF5ECC8…C228`](https://testnet.xrpl.org/transactions/3FF5ECC8955A2A1344A8BC4F4BDE93C7B5EE7DE1C00EED40D685AD2BB346C228) |
+| ↳ inner `EscrowFinish` | [`0EE93565…D8AE`](https://testnet.xrpl.org/transactions/0EE93565DB15AE79A83500BDDD0EF246887A711C49FDCD648025865DB4A9D8AE) |
+| ↳ inner payout: 0.9 RLUSD delivered via the AMM (`SendMax` 3.513955 XRP) | [`B36DD939…91C8F`](https://testnet.xrpl.org/transactions/B36DD9391BE3EEE8AADB20BBDA375DF4BE1FC86DB65C761A81A4836695691C8F) |
+| ↳ inner platform fee, 0.390439 XRP | [`3BBBCDB7…EE53`](https://testnet.xrpl.org/transactions/3BBBCDB7A7AF6BC569C6E6FB26FF4607A7A810E9DA9AA28DE30CC36BC16CEE53) |
+| 3 AEYE reputation points minted | [`416EAF8D…07A6`](https://testnet.xrpl.org/transactions/416EAF8D578DC93B92AC4CAE9B1578D7D43C0769E17D5D5F179EB27E7F5F07A6) |
+| Verified Observer `CredentialCreate` / `CredentialAccept` | [`651724D8…12D0`](https://testnet.xrpl.org/transactions/651724D83351EC2F097649BFAE0655C1865BC0DFA5DC9B14A11C7265D10F12D0) / [`AC4CEAF2…CDAE`](https://testnet.xrpl.org/transactions/AC4CEAF27D0ECFE0938BB04E6EAF6F1EC108445B47C9806E846717321B68CDAE) |
+
+At the end of the run the observer holds 0.9 RLUSD and 3 AEYE.
+
+### Developer feedback
+
+- **XRPL docs MCP (`mcp.xrpledger.ai`, from the dev portal's `.mcp.json`):** this was the most useful tool. Its semantic search returned exactly the right chunk on the first try for two questions that decided our design: the XLS-85 `asfAllowTrustLineLocking` flag (which ruled out RLUSD TokenEscrow), and the Batch tutorial's warning that an outer `tesSUCCESS` "does not guarantee the inner transactions succeeded". One rough edge: it accepts only MCP protocol `2025-11-25` and rejects older clients with `-32600 Unsupported protocol version`, so some MCP clients can't connect yet.
+- **Context7 (`/xrplf/xrpl-dev-portal`):** good snippets when it worked (single-account Batch with `tfInnerBatchTxn`, `mpt_holders`), but our MCP calls hit "Monthly quota exceeded" partway through. Without an API key it's unreliable during a hackathon.
+- **`xrpl.org/mcp`:** a "code mode" server (`describe-tools` + `execute` JS sandbox). It's powerful, but it adds a round trip compared with plain search tools.
+- **SKILL.md (`xrpl-payments`, `xrpl-trading`, `xrpl-agent-wallet`):** accurate where it has coverage. It lists the right RLUSD Testnet issuer, says to set up the trust line first (`tecNO_LINE`), covers cross-currency `SendMax`, and says to read `meta.delivered_amount`. We followed those patterns directly. Gap: none of the three skills or their references mention Batch, MPTs/`MPTokenAuthorize`, TokenEscrow, or Credentials, which were four of our five primitives, and escrow is documented as XRP-only. A `xrpl-batch`/`xrpl-tokens` skill would have saved most of our spike time.
+- **What we had to learn by experiment:** (1) xrpl.js `autofill` fills inner Batch `Fee: "0"`/`SigningPubKey: ""`/`Sequence` but does not set `tfInnerBatchTxn`, so you add it yourself. The validation error says so clearly. (2) Finding inner results: compute each inner hash with `hashes.hashSignedTx(RawTransaction)` and look it up with `tx`. In our spike, an independent Batch returned outer `tesSUCCESS` with one inner `tecNO_AUTH` (mint to a holder that hadn't opted in). (3) An XRP→RLUSD `Payment` with `SendMax` and no `Paths` routes through the AMM by default. (4) `MPTokenIssuanceCreate` validation `console.warn`s about XLS-89 metadata (`icon`, `asset_class`, `issuer_name`). `encodeMPTokenMetadata` with every field keeps logs quiet.
+- **What worked well:** Testnet faucet + 3–5 s validation made a full escrow → Batch settlement → MPT mint loop runnable in under a minute, and the AMM's depth (~220k RLUSD) meant no order-book setup for payouts.
+
 ## Deploy
 
 The Render service is [`https://a-eye-1zsv.onrender.com`](https://a-eye-1zsv.onrender.com) (configuration in `render.yaml`). It runs as one Node server and mounts a persistent disk at `/var/data` for SQLite and local uploads. Render currently sets `ALLOW_UNPAID_QUESTIONS=1`; configure a treasury and disable that flag to demonstrate x402 payments. Configure the `S3_*` environment variables to store photos in Cloudflare R2 instead of on the Render disk.
@@ -263,7 +323,7 @@ flowchart LR
   RAFFLE -->|"AUSD payout or refund"| BASE
   ORACLE["demo-agent oracle mode"] <--> GEMINI["Gemini Predictions<br/>market discovery + sandbox orders"]
   ORACLE --> MCP
-  XRPLS["Optional XRPL testnet scripts"] --> XRPL["RLUSD trustlines/payments<br/>XRP escrow · observer credentials"]
+  SETTLE -->|"XRPL-rail winner"| XRPL["XRPL Testnet<br/>XRP Escrow · Batch settle · RLUSD via AMM<br/>AEYE MPT reputation · Credentials"]
 ```
 
 The Gemini oracle attaches `market_ref` (provider, contract, `implied_yes`) to each question; the gallery and `/live` show live odds, the crowd comparison, and recorded sandbox trades. The answer flow reads questions aloud and accepts spoken answers through the ElevenLabs TTS/STT proxy routes. XRPL helpers are a separate testnet demo, not part of the AUSD question-settlement path: RLUSD payments require a destination trustline, the escrow pot is XRP, and credential issuance/acceptance are separate operations.
