@@ -258,8 +258,13 @@ const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
 export function applyPendingRestore(file: string): boolean {
   if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
-  if (existsSync(file)) renameSync(file, `${file}.pre-restore-${Date.now()}`);
-  rmSync(`${file}-wal`, { force: true });
+  const previous = `${file}.pre-restore-${Date.now()}`;
+  if (existsSync(file)) {
+    renameSync(file, previous);
+    if (existsSync(`${file}-wal`)) renameSync(`${file}-wal`, `${previous}-wal`);
+  } else {
+    rmSync(`${file}-wal`, { force: true });
+  }
   rmSync(`${file}-shm`, { force: true });
   renameSync(`${file}.restore`, file);
   console.info("[db] restored database from", `${file}.restore`);
