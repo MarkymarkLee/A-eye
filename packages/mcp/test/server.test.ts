@@ -1,10 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { encodePaymentResponseHeader } from "@x402/core/http";
 import { describe, expect, it } from "vitest";
 import { AEyeApi, type FetchLike } from "../src/api.js";
 import { createServer } from "../src/server.js";
 
 const BASE = "http://a-eye.test";
+const PEEK_TX = `0x${"ab".repeat(32)}`;
 const results = (status: "open" | "closed") => ({
   question_id: "q1",
   prompt: "Is there a line?",
@@ -25,8 +27,10 @@ const results = (status: "open" | "closed") => ({
       observer_reputation: { agreement_rate: 0.8, scored_answers: 5, answer_count: 9 },
     },
   ],
+  pot_usd: 1,
+  ausd_flows: [],
   web_baseline: null,
-  raffle: { winner: null, payout_tx: null, seed_commit: "ab", seed_reveal: null, entropy_block_hash: null },
+  raffle: { prize_amount: 0.9, currency: "AUSD", seed_commit: "ab" },
 });
 
 async function connect(fetchImpl: FetchLike, options: { pollIntervalMs?: number; maxImages?: number } = {}) {
@@ -38,7 +42,7 @@ async function connect(fetchImpl: FetchLike, options: { pollIntervalMs?: number;
 }
 
 describe("a-eye MCP server", () => {
-  it("lists the five tools", async () => {
+  it("lists the six tools", async () => {
     const client = await connect(async () => new Response("{}"));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -46,6 +50,7 @@ describe("a-eye MCP server", () => {
       "check_coverage",
       "get_question_results",
       "list_my_questions",
+      "peek_results",
       "wait_for_results",
     ]);
     expect(tools.find((tool) => tool.name === "ask_location_question")?.inputSchema.properties).toHaveProperty("webhook_url");
@@ -106,6 +111,49 @@ describe("a-eye MCP server", () => {
     expect(content.find((c) => c.text?.includes("Evidence #1"))!.text).toContain(
       "observer agreed with the crowd 80% of the time on 5 closed questions (9 answers)",
     );
+  });
+
+  it("explains sealed results and offers the paid peek", async () => {
+    const sealedResponse = () =>
+      Response.json({
+        ...results("open"),
+        sealed: true,
+        peek: { price_usd: 0.02, url: `${BASE}/api/questions/q1/peek` },
+        evidence: [],
+      });
+    const client = await connect(async () => sealedResponse());
+    const res = await client.callTool({
+      name: "get_question_results",
+      arguments: { question_id: "q1", include_images: false },
+    });
+    const content = res.content as Array<{ type: string; text?: string }>;
+    expect(content[0]?.text).toBe(
+      "Results are sealed until the question closes (2 responses so far). Call peek_results to buy interim results for $0.02 AUSD, or wait_for_results.",
+    );
+
+    const waitingClient = await connect(async () => sealedResponse(), { pollIntervalMs: 1000 });
+    const waiting = await waitingClient.callTool({
+      name: "wait_for_results",
+      arguments: { question_id: "q1", timeout_s: 1, include_images: false },
+    });
+    expect((waiting.content as Array<{ text?: string }>)[0]?.text).toBe(content[0]?.text);
+  });
+
+  it("fetches peek results and reports payment metadata", async () => {
+    const client = await connect(async (url) => {
+      expect(url).toBe(`${BASE}/api/questions/q1/peek`);
+      return Response.json(
+        { ...results("open"), paid: true, payment_tx: null },
+        { headers: { "PAYMENT-RESPONSE": encodePaymentResponseHeader({ success: true, transaction: PEEK_TX, network: "eip155:84532" }) } },
+      );
+    });
+    const res = await client.callTool({
+      name: "peek_results",
+      arguments: { question_id: "q1", include_images: false },
+    });
+    const content = res.content as Array<{ type: string; text?: string }>;
+    expect(content[0]?.text).toBe(`paid: yes; payment_tx: ${PEEK_TX}`);
+    expect(JSON.parse(content[1]!.text!)).toMatchObject({ paid: true, payment_tx: PEEK_TX });
   });
 
   it("surfaces API errors as tool errors", async () => {

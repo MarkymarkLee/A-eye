@@ -19,6 +19,8 @@ export class ApiError extends Error {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+export type PeekResults = QuestionResults & { paid: boolean; payment_tx: string | null };
+
 export class AEyeApi {
   constructor(
     private readonly baseUrl: string,
@@ -60,6 +62,13 @@ export class AEyeApi {
 
   getResults(questionId: string) {
     return this.request<QuestionResults>(`/api/questions/${encodeURIComponent(questionId)}`);
+  }
+
+  async peekResults(questionId: string): Promise<PeekResults> {
+    const { data, headers } = await this.requestWithHeaders<PeekResults>(
+      `/api/questions/${encodeURIComponent(questionId)}/peek`,
+    );
+    return { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) };
   }
 
   coverage(lat: number, lng: number) {
