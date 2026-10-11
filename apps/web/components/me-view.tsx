@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, SealCheck, Trophy } from "@phosphor-icons/react";
 import { ago } from "@/lib/time";
+import { PushOptIn } from "./push-opt-in";
 
 type Observer = { id: string; display_name: string; evm_address?: string; xrpl_address?: string; payout_rail: "evm" | "xrpl" };
 type Xrpl = {
@@ -163,6 +164,12 @@ export function MeView() {
           </form>
         )}
         {me?.xrpl && <CredentialBadge xrpl={me.xrpl} hasAddress={Boolean(me.observer.xrpl_address)} />}
+
+        <div className="mt-10">
+          <h2 className="text-xl font-semibold tracking-tight">Alerts</h2>
+          <p className="mt-1 text-[13px] text-muted">Get a notification when a new question pops up near you.</p>
+          <PushOptIn />
+        </div>
       </section>
 
       <section>
