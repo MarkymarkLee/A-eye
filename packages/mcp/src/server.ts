@@ -13,11 +13,19 @@ const fail = (err: unknown): CallToolResult => ({
   content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
 });
 
-async function resultsContent(api: AEyeApi, results: QuestionResults, includeImages: boolean): Promise<CallToolResult> {
+async function resultsContent(
+  api: AEyeApi,
+  results: QuestionResults,
+  includeImages: boolean,
+  maxImages: number,
+): Promise<CallToolResult> {
   const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(results, null, 2) }];
   if (!includeImages) return { content };
-  for (const [i, ev] of results.evidence.entries()) {
-    const img = await api.fetchImage(ev.image_url).catch(() => null);
+  const limit = Number.isFinite(maxImages) ? Math.max(0, Math.floor(maxImages)) : 8;
+  const evidence = results.evidence.slice(0, limit);
+  const images = await Promise.all(evidence.map((ev) => api.fetchImage(ev.image_url).catch(() => null)));
+  for (const [i, ev] of evidence.entries()) {
+    const img = images[i];
     if (!img) continue;
     content.push({
       type: "text",
@@ -25,12 +33,18 @@ async function resultsContent(api: AEyeApi, results: QuestionResults, includeIma
     });
     content.push({ type: "image", data: img.data, mimeType: img.mimeType });
   }
+  if (results.evidence.length > limit) {
+    content.push({ type: "text", text: `+${results.evidence.length - limit} more photos not attached; see ${results.gallery_url}` });
+  }
   return { content };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpServer {
+export function createServer(
+  api: AEyeApi,
+  { pollIntervalMs = 3000, maxImages = Number(process.env.A_EYE_MCP_MAX_IMAGES ?? 8) } = {},
+): McpServer {
   const server = new McpServer({ name: "a-eye", version: "0.1.0" });
 
   server.registerTool(
@@ -55,7 +69,7 @@ export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpS
     {
       title: "Get question results",
       description:
-        "Percent per answer, response count, gallery link, raffle info and (optionally) every photo paired with its answer so you can audit the evidence.",
+        "Percent per answer, response count, gallery link, raffle info and (optionally) evidence photos downscaled to about 512 px, capped at 8 images by default.",
       inputSchema: {
         question_id: z.string(),
         include_images: z.boolean().default(true),
@@ -63,7 +77,7 @@ export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpS
     },
     async ({ question_id, include_images }) => {
       try {
-        return await resultsContent(api, await api.getResults(question_id), include_images);
+        return await resultsContent(api, await api.getResults(question_id), include_images, maxImages);
       } catch (err) {
         return fail(err);
       }
@@ -89,7 +103,7 @@ export function createServer(api: AEyeApi, { pollIntervalMs = 3000 } = {}): McpS
           await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
           results = await api.getResults(question_id);
         }
-        return await resultsContent(api, results, include_images);
+        return await resultsContent(api, results, include_images, maxImages);
       } catch (err) {
         return fail(err);
       }

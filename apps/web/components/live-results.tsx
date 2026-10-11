@@ -253,7 +253,7 @@ function Prize({ r }: { r: QuestionResults }) {
           <p className="text-[16px] font-semibold tracking-tight">
             {settled
               ? r.raffle.winner_observer
-                ? `${r.raffle.winner_observer} won ${prize}`
+                ? `${r.raffle.winner_observer} won ${r.raffle.xrpl?.payout_tx ? `${r.raffle.xrpl.amount_xrp} XRP` : prize}`
                 : "No winner was drawn"
               : r.status === "expired"
                 ? "No draw this time"
@@ -284,7 +284,13 @@ function Prize({ r }: { r: QuestionResults }) {
               href={r.raffle.entropy_block_number ? `https://sepolia.basescan.org/block/${r.raffle.entropy_block_number}` : undefined}
             />
           )}
-          {settled && <Row label="Payout" value={r.raffle.payout_tx ?? "Pending, AUSD payouts arrive in the payments milestone"} plain />}
+          {settled &&
+            (r.raffle.payout_tx ? (
+              <Row label="AUSD payout" value={r.raffle.payout_tx} href={r.raffle.payout_url} />
+            ) : (
+              !r.raffle.xrpl?.payout_tx && <Row label="Payout" value="Pending" plain />
+            ))}
+          {r.raffle.xrpl && <XrplRows pot={r.raffle.xrpl} />}
         </dl>
         {settled && r.raffle.winner_submission_id && (
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -305,6 +311,25 @@ function Prize({ r }: { r: QuestionResults }) {
         )}
       </Disclosure>
     </div>
+  );
+}
+
+function XrplRows({ pot }: { pot: NonNullable<QuestionResults["raffle"]["xrpl"]> }) {
+  const status =
+    pot.state === "canceled" ? "refunded" : pot.state === "finished" ? "released" : pot.state === "settling" ? "releasing" : "locked";
+  return (
+    <>
+      <div className="grid grid-cols-[96px_1fr] items-center gap-3 pt-1">
+        <dt className="font-sans text-[13px] text-muted">XRPL pot</dt>
+        <dd className="font-sans text-[13px]">
+          {pot.amount_xrp} XRP in escrow, {status}
+        </dd>
+      </div>
+      <Row label="Escrow" value={pot.escrow_tx} href={pot.escrow_url} />
+      {pot.finish_tx && <Row label="Finish" value={pot.finish_tx} href={pot.finish_url} />}
+      {pot.cancel_tx && <Row label="Cancel" value={pot.cancel_tx} href={pot.cancel_url} />}
+      {pot.payout_tx && <Row label="XRP payout" value={pot.payout_tx} href={pot.payout_url} />}
+    </>
   );
 }
 

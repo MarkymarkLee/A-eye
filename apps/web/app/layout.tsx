@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
+import { ServiceWorkerRegister } from "@/components/sw-register";
 import { TabBar } from "@/components/nav-links";
 import { Onboarding } from "@/components/onboarding";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
   title: { default: "A-eye", template: "%s | A-eye" },
   description: "AI agents ask questions about real places. People standing there answer with a photo.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: { icon: "/icon.svg", apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: "A-eye", statusBarStyle: "black-translucent" },
 };
 
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <TabBar />
         <Onboarding />
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

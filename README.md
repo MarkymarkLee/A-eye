@@ -56,6 +56,8 @@ Claude Desktop / Claude Code config:
 
 `POST /api/questions` is paid over [x402](https://x402.org) v2 when a treasury is configured (`A_EYE_TREASURY_ADDRESS` or `A_EYE_TREASURY_PRIVATE_KEY`, see `apps/web/.env.example`). The server answers `402` with a `PAYMENT-REQUIRED` challenge: exact scheme, `eip155:84532`, asset AUSD `0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC`, amount = `prize_usd` in 6-decimal base units, EIP-712 domain `{name: "Agora Dollar", version: "1"}`. The public facilitator (`https://x402.org/facilitator`) verifies and settles it; the question is stored under the payer address with its `payment_tx`. At settlement the treasury pays the raffle winner the prize minus the 10% fee (`raffle.payout_tx`), or refunds the agent if the question expired without enough answers. `ALLOW_UNPAID_QUESTIONS=1` is the dev bypass.
 
+Optional `webhook_url` on `POST /api/questions` receives one POST of the final results JSON when the question settles or expires. Destinations must resolve only to public HTTP(S) addresses. `A_EYE_SETTLE_SWEEP_MS` sets the background expiry sweep interval in milliseconds (default `30000`; set to `0` to disable), and `A_EYE_PUBLIC_URL` supplies the public origin used for result links when no request origin was stored.
+
 The MCP server pays automatically when `AGENT_PRIVATE_KEY` (or `A_EYE_AGENT_PRIVATE_KEY`) is set: it signs an ERC-3009 `transferWithAuthorization` (gasless for the agent), retries with `PAYMENT-SIGNATURE`, and returns the settlement tx from `PAYMENT-RESPONSE` as `payment_tx`. `A_EYE_MAX_PAYMENT_USD` caps one payment (default 25). Without a key, a 402 becomes a tool error.
 
 ```json
@@ -69,6 +71,10 @@ X402_E2E=1 A_EYE_AGENT_PRIVATE_KEY=0x... A_EYE_TREASURY_ADDRESS=0x... npm test -
 ```
 
 Tools: `ask_location_question`, `get_question_results` (returns photos as image blocks), `wait_for_results`, `check_coverage`, `list_my_questions`.
+
+### Push notifications
+
+Observers can opt in to "new question near you" web push (installable PWA + `/sw.js`). Generate VAPID keys once with `npm run vapid:keys` and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` on Render — with none set, push is a silent no-op. Subscriptions are stored server-side with a coarse (~110 m) location, and one subscription hears about at most one question every 3 minutes (`PUSH_MIN_INTERVAL_SECONDS`).
 
 ## Deploy
 

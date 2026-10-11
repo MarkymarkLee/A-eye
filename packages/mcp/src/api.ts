@@ -6,6 +6,7 @@ import type {
   QuestionSummary,
 } from "@a-eye/shared";
 import { paymentTxFromHeaders } from "./payments.js";
+import { downscaleImage } from "./images.js";
 
 export class ApiError extends Error {
   constructor(
@@ -69,10 +70,18 @@ export class AEyeApi {
     return (await this.request<{ questions: QuestionSummary[] }>("/api/questions/mine")).questions;
   }
 
-  async fetchImage(url: string): Promise<{ data: string; mimeType: string } | null> {
-    const res = await this.fetchImpl(url);
+  async fetchImage(
+    url: string,
+    { maxPx = 512, timeoutMs = 10_000 }: { maxPx?: number; timeoutMs?: number } = {},
+  ): Promise<{ data: string; mimeType: string } | null> {
+    const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     const mimeType = res.headers.get("content-type") ?? "image/jpeg";
-    return { data: Buffer.from(await res.arrayBuffer()).toString("base64"), mimeType };
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > 15 * 1024 * 1024) return null;
+    const downscaled = await downscaleImage(bytes, maxPx);
+    if (downscaled) return { data: downscaled.data.toString("base64"), mimeType: downscaled.mimeType };
+    if (bytes.byteLength > 1024 * 1024) return null;
+    return { data: Buffer.from(bytes).toString("base64"), mimeType };
   }
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowRight, Camera, ChevronRight, Clock, Trophy, Wallet } from "lucide-react";
+import { ArrowRight, BadgeCheck, Bell, Camera, ChevronRight, Clock, Trophy, Wallet } from "lucide-react";
 import { ago } from "@/lib/time";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
@@ -12,9 +12,16 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Disclosure } from "./ui/disclosure";
 import { EmptyState } from "./ui/empty-state";
+import { PushOptIn } from "./push-opt-in";
 import { Skeleton } from "./ui/skeleton";
 
-type Observer = { id: string; display_name: string; evm_address?: string };
+type Observer = { id: string; display_name: string; evm_address?: string; xrpl_address?: string; payout_rail: "evm" | "xrpl" };
+type Xrpl = {
+  enabled: boolean;
+  accepted: number;
+  threshold: number;
+  credential?: { subject: string; state: "pending" | "issued" | "failed"; tx?: string; url?: string };
+};
 type Entry = {
   submission_id: string;
   question_id: string;
@@ -29,10 +36,12 @@ type Entry = {
 
 export function MeView() {
   const reduce = useReducedMotion();
-  const [me, setMe] = useState<{ observer: Observer; entries: Entry[] } | null>(null);
+  const [me, setMe] = useState<{ observer: Observer; entries: Entry[]; xrpl?: Xrpl } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState("");
   const [wallet, setWallet] = useState("");
+  const [xrplAddress, setXrplAddress] = useState("");
+  const [rail, setRail] = useState<"evm" | "xrpl">("evm");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -43,6 +52,8 @@ export function MeView() {
         setMe(j);
         setName(j.observer.display_name);
         setWallet(j.observer.evm_address ?? "");
+        setXrplAddress(j.observer.xrpl_address ?? "");
+        setRail(j.observer.payout_rail ?? "evm");
       })
       .catch(() => setLoadError(true));
   }, []);
@@ -54,14 +65,14 @@ export function MeView() {
     const res = await fetch("/api/me", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ display_name: name, evm_address: wallet.trim() }),
+      body: JSON.stringify({ display_name: name, evm_address: wallet.trim(), xrpl_address: xrplAddress.trim(), payout_rail: rail }),
     });
     const j = await res.json();
     setSaving(false);
     if (res.ok) {
       haptic("success");
-      toast.success("Saved", { description: wallet.trim() ? "Winnings will go to this wallet." : undefined });
-      setMe((m) => (m ? { ...m, observer: j.observer } : m));
+      toast.success("Saved", { description: wallet.trim() || xrplAddress.trim() ? "Winnings will go to this wallet." : undefined });
+      setMe((m) => (m ? { ...m, observer: j.observer, xrpl: j.xrpl } : m));
     } else {
       haptic("error");
       setErr(j.error);
@@ -71,7 +82,7 @@ export function MeView() {
   const entries = me?.entries ?? [];
   const wins = entries.filter((e) => e.won);
   const pending = entries.filter((e) => e.status === "open").length;
-  const hasWallet = Boolean(me?.observer.evm_address);
+  const hasWallet = Boolean(me?.observer.evm_address || me?.observer.xrpl_address);
 
   return (
     <main className="mx-auto grid max-w-[1100px] gap-8 px-4 pb-24 pt-6 md:grid-cols-[5fr_7fr] md:gap-12 md:px-6 md:pt-12">
@@ -135,6 +146,58 @@ export function MeView() {
                   Paste a crypto wallet address (it starts with 0x). Optional until you win.
                 </p>
               </div>
+              <fieldset className="grid gap-2">
+                <legend className="mb-2 text-[14px] font-semibold">Get paid in</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1" role="radiogroup">
+                  {(
+                    [
+                      ["evm", "Digital dollars"],
+                      ["xrpl", "XRP"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        "relative grid h-10 cursor-pointer place-items-center rounded-full text-[14px] font-semibold transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent",
+                        rail === value ? "bg-surface text-ink shadow-panel" : "text-muted",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="payout_rail"
+                        value={value}
+                        checked={rail === value}
+                        onChange={() => setRail(value)}
+                        className="sr-only"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {me.xrpl && !me.xrpl.enabled && rail === "xrpl" && (
+                  <p className="text-[13px] text-muted">XRP payouts aren&apos;t switched on here yet, so you&apos;ll get digital dollars instead.</p>
+                )}
+              </fieldset>
+              {rail === "xrpl" && (
+                <div className="grid gap-2">
+                  <label htmlFor="xrpl" className="text-[14px] font-semibold">
+                    XRP wallet address
+                  </label>
+                  <input
+                    id="xrpl"
+                    value={xrplAddress}
+                    onChange={(e) => setXrplAddress(e.target.value)}
+                    className="field font-mono text-[14px]"
+                    placeholder="r…"
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    aria-describedby="xrpl-help"
+                  />
+                  <p id="xrpl-help" className="text-[13px] text-muted">
+                    Starts with r. Also earns you a Verified Observer badge after {me.xrpl?.threshold ?? 3} answers.
+                  </p>
+                </div>
+              )}
               {err && (
                 <p role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
                   {err}
@@ -146,12 +209,21 @@ export function MeView() {
             </form>
             <Disclosure title="What kind of wallet?" className="mt-4 bg-surface-2 ring-0">
               <p className="text-[13.5px] leading-relaxed text-muted">
-                Any EVM address works (MetaMask, Coinbase Wallet, Rainbow…). Prizes are paid in AUSD, a dollar stablecoin, on the Base
-                Sepolia test network.
+                Any EVM address works (MetaMask, Coinbase Wallet, Rainbow…). Digital dollars are AUSD, a dollar stablecoin, on the Base
+                Sepolia test network. XRP prizes are held in an XRPL testnet escrow and released to your r-address.
               </p>
             </Disclosure>
           </Card>
         )}
+        {me?.xrpl && <CredentialBadge xrpl={me.xrpl} hasAddress={Boolean(me.observer.xrpl_address)} />}
+
+        <Card className="mt-4 p-5">
+          <h2 className="flex items-center gap-2 text-[16px] font-semibold tracking-tight">
+            <Bell className="size-4" aria-hidden /> Alerts
+          </h2>
+          <p className="mt-1 text-[13.5px] text-muted">Get a heads-up when a new question pops up near you.</p>
+          <PushOptIn />
+        </Card>
       </section>
 
       <section>
@@ -238,5 +310,48 @@ function Stat({ icon, label, value, hot }: { icon: React.ReactNode; label: strin
         <span className="mt-1 block text-[24px] font-bold tabular-nums tracking-tight">{value}</span>
       )}
     </div>
+  );
+}
+
+function CredentialBadge({ xrpl, hasAddress }: { xrpl: Xrpl; hasAddress: boolean }) {
+  const issued = xrpl.credential?.state === "issued";
+  const progress = Math.min(xrpl.accepted, xrpl.threshold);
+  return (
+    <Card className={cn("mt-4 p-5", issued && "bg-accent-soft ring-transparent")}>
+      <p className={cn("flex items-center gap-2 text-[16px] font-semibold tracking-tight", issued && "text-accent-ink")}>
+        <BadgeCheck className="size-5" aria-hidden /> Verified Observer
+      </p>
+      <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
+        {issued
+          ? "You've earned it. It's recorded on the XRP Ledger under your address."
+          : xrpl.credential?.state === "pending"
+            ? "Issuing your badge now…"
+            : !xrpl.enabled
+              ? "Badges aren't switched on here yet."
+              : !hasAddress
+                ? "Add an XRP wallet address to earn this badge."
+                : `${progress} of ${xrpl.threshold} accepted answers.`}
+      </p>
+      {!issued && xrpl.enabled && hasAddress && (
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+          <div className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2" style={{ width: `${(progress / xrpl.threshold) * 100}%` }} />
+        </div>
+      )}
+      {xrpl.credential?.subject && (
+        <p className="mt-2 truncate font-mono text-[12.5px] text-muted" title={xrpl.credential.subject}>
+          {xrpl.credential.subject}
+        </p>
+      )}
+      {xrpl.credential?.url && (
+        <a
+          href={xrpl.credential.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 inline-block font-mono text-[12.5px] underline decoration-line underline-offset-4 hover:decoration-ink"
+        >
+          CredentialCreate {xrpl.credential.tx!.slice(0, 10)}...
+        </a>
+      )}
+    </Card>
   );
 }

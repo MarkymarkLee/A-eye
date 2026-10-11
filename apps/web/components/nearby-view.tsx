@@ -10,7 +10,9 @@ import { haptic } from "@/lib/haptics";
 import { walkHint, directionsUrl } from "@/lib/walk";
 import { cn } from "@/lib/cn";
 import { Morph } from "./motion/page";
+import { InstallPrompt } from "./install-prompt";
 import { PermissionHelp } from "./permission-help";
+import { PushOptIn } from "./push-opt-in";
 import { Badge, LiveDot } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Countdown } from "./ui/countdown";
@@ -114,6 +116,8 @@ export function NearbyView() {
         )}
 
         <LocationNotice state={loc} />
+        <InstallPrompt />
+        <PushOptIn fix={fix} />
         {error && (
           <p role="status" className="mt-4 rounded-[14px] bg-warn-soft px-3.5 py-2.5 text-[14px] text-warn">
             Connection hiccup. We&apos;ll keep trying.
