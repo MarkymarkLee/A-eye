@@ -90,7 +90,12 @@ export const CreateQuestionInput = z.object({
     .refine((opts) => new Set(opts.map((o) => o.trim().toLowerCase())).size === opts.length, "options must be distinct"),
   allow_free_text: z.boolean().default(false),
   place_label: z.string().trim().max(80).refine(isSafeText, SAFE_TEXT_ERROR).optional(),
-  prize_usd: z.number().min(0.01).max(500).default(1),
+  prize_usd: z
+    .number()
+    .min(0.01)
+    .max(500)
+    .refine((v) => Math.abs(v * 1e6 - Math.round(v * 1e6)) < 1e-6, { message: "at most 6 decimal places" })
+    .default(1),
   min_responses: z.number().int().min(1).max(100).default(3),
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),
@@ -177,6 +182,7 @@ export type RaffleInfo = {
   currency: string;
   payout_tx?: string;
   payout_url?: string;
+  payout_status?: "awaiting_address" | "pending" | "failed" | "paid";
   xrpl?: XrplPotInfo;
 };
 

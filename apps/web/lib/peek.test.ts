@@ -188,10 +188,10 @@ describe("pay-per-peek", () => {
     const secondWinner = store.getOrCreateObserver("peek-second-winner");
     store.updateObserver(secondWinner.id, { evm_address: `0x${"33".repeat(20)}` });
     await expect(submit(questionId, secondWinner.id)).resolves.toMatchObject({ ok: true, closed: true });
-    expect(transferAusd).toHaveBeenCalledWith(expect.any(String), winnerPayoutUnits(2.52));
+    expect(transferAusd).toHaveBeenCalledWith(expect.any(String), winnerPayoutUnits(2.52), expect.anything());
 
     const final = (await store.getResults(questionId, "http://a-eye.test"))!;
-    expect(final.raffle.prize_amount).toBe(2.27);
+    expect(final.raffle.prize_amount).toBe(2.268);
     expect(final.pot_usd).toBe(2.52);
     expect(final.ausd_flows.map((flow) => flow.kind)).toEqual(["bounty", "peek", "payout"]);
     expect(final.ausd_flows.every((flow) => flow.url.includes("sepolia.basescan.org/tx/"))).toBe(true);
@@ -217,7 +217,7 @@ describe("pay-per-peek", () => {
     const questionId = createPaidQuestion();
     store.recordPeek(questionId, agent.address, 0.02, PEEK_TX);
     await store.closeNow(questionId);
-    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(agent.address, 2_500_000n);
+    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(agent.address, 2_500_000n, expect.anything());
     const results = (await store.getResults(questionId, "http://a-eye.test"))!;
     expect(results.status).toBe("expired");
     expect(results.ausd_flows.map((flow) => flow.kind)).toEqual(["bounty", "peek", "refund"]);

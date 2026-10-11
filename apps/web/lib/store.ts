@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
-  PLATFORM_FEE,
+  fromBaseUnits,
   type CreateQuestionInput,
   type AusdFlow,
   type PayoutRail,
@@ -18,14 +18,14 @@ import {
   type WebBaseline,
   type XrplPotInfo,
 } from "@a-eye/shared";
-import { distanceM } from "./geo";
+import { distanceM, lngBoxSql } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
 import {
   peekPaywallActive,
   peekPriceUnits,
   prizeUnits,
   questionPayTo,
-  sendFromTreasury,
+  transferFromTreasury,
   winnerPayoutUnits,
 } from "./payments";
 import { imageUrl, putImage } from "./storage";
@@ -39,7 +39,14 @@ import {
   type ObserverStats,
   type WinRow,
 } from "./reputation";
-import { explorerTxUrl } from "./chain";
+import {
+  ausdAuthorizationUsed,
+  ausdTxStatus,
+  explorerTxUrl,
+  findAuthorizationTx,
+  isTreasuryConfigured,
+  rebroadcastRawTx,
+} from "./chain";
 import {
   XrplError,
   cancelEscrow,
@@ -122,6 +129,23 @@ export type Observer = {
   xrpl_address?: string;
   payout_rail: PayoutRail;
   created_at: string;
+};
+
+type TreasuryTransferRow = {
+  question_id: string;
+  kind: "payout" | "refund";
+  to_address: string | null;
+  amount_units: string;
+  state: "pending" | "sending" | "sent" | "failed" | "paid";
+  tx: string | null;
+  raw_tx: string | null;
+  rail: "facilitator" | "direct" | null;
+  auth_nonce: string | null;
+  auth_valid_before: number | null;
+  from_block: string | null;
+  attempts: number;
+  last_error: string | null;
+  updated_at: string;
 };
 
 type XrplEscrowRow = {
@@ -278,6 +302,22 @@ create table if not exists push_subscriptions (
   created_at text not null
 );
 create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat, lng);
+create table if not exists treasury_transfers (
+  question_id text not null references questions(id),
+  kind text not null,            -- 'payout' | 'refund'
+  to_address text,               -- null = payout waiting for the winner's EVM address
+  amount_units text not null,
+  state text not null default 'pending', -- pending | sending | sent | failed | paid
+  tx text, raw_tx text,
+  rail text,                 -- 'facilitator' | 'direct'
+  auth_nonce text,           -- EIP-3009 nonce when sent via the facilitator rail
+  auth_valid_before integer, -- unix seconds; an unused nonce is dead after this
+  from_block text,           -- block height when the authorization was signed
+  attempts integer not null default 0,
+  last_error text,
+  updated_at text not null,
+  primary key (question_id, kind)
+);
 `;
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
@@ -646,10 +686,12 @@ export async function nearbyQuestions(lat: number, lng: number, maxKm: number) {
   await settleDue();
   // Bounding box in SQL, exact great-circle distance in JS.
   const dLat = maxKm / 111.32;
-  const dLng = maxKm / (111.32 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  const polar = Math.abs(lat) + dLat >= 90;
+  const dLng = polar ? Number.POSITIVE_INFINITY : maxKm / (111.32 * Math.cos((lat * Math.PI) / 180));
+  const lngBox = lngBoxSql(lng, dLng);
   const rows = db()
-    .prepare("select * from questions where lat between ? and ? and lng between ? and ?")
-    .all(lat - dLat, lat + dLat, lng - dLng, lng + dLng) as QuestionRow[];
+    .prepare(`select * from questions where lat between ? and ? and ${lngBox.sql}`)
+    .all(lat - dLat, lat + dLat, ...lngBox.params) as QuestionRow[];
   return rows
     .map((q) => summarize(q, { lat, lng }))
     .filter((q) => q.distance_m! <= maxKm * 1000)
@@ -679,6 +721,9 @@ export async function buildResults(id: string, origin: string): Promise<Question
   const options = JSON.parse(q.options) as string[];
   const subs = submissionsFor(id);
   const raffle = db().prepare("select * from raffles where question_id = ?").get(id) as RaffleRow | undefined;
+  const payout = db()
+    .prepare("select state, to_address from treasury_transfers where question_id = ? and kind = 'payout'")
+    .get(id) as { state: TreasuryTransferRow["state"]; to_address: string | null } | undefined;
   const peeks = db()
     .prepare("select payer_address, amount, payment_tx, created_at from peeks where question_id = ? and payment_tx is not null")
     .all(id) as { payer_address: string | null; amount: number; payment_tx: string; created_at: string }[];
@@ -779,6 +824,15 @@ export async function buildResults(id: string, origin: string): Promise<Question
       currency: q.currency,
       payout_tx: raffle?.payout_tx ?? undefined,
       payout_url: raffle?.payout_tx ? explorerTxUrl(raffle.payout_tx) : undefined,
+      payout_status: payout
+        ? payout.state === "paid"
+          ? "paid"
+          : payout.state === "failed"
+            ? "failed"
+            : payout.to_address === null
+              ? "awaiting_address"
+              : "pending"
+        : undefined,
       xrpl: xrplPotInfo(id),
     },
     market_trades: marketTrades(id),
@@ -788,7 +842,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
 const agentLabel = (address: string | null) =>
   address ? `agent ${address.slice(0, 6)}…${address.slice(-4)}` as const : "agent" as const;
 
-export const payoutAmount = (prize: number) => Math.round(prize * (1 - PLATFORM_FEE) * 100) / 100;
+export const payoutAmount = (prize: number) => Number(fromBaseUnits(winnerPayoutUnits(prize)));
 
 export function peekRevenue(questionId: string): number {
   const row = db()
@@ -953,18 +1007,22 @@ export async function addSubmission(input: {
   const key = `submissions/${q.id}/${id}.jpg`;
   await putImage(key, input.image.bytes, input.image.type);
   try {
-    db()
+    // Atomic gated insert: the question must still be open and under max_responses
+    // at insert time, so a concurrency race can never slip in a late entrant.
+    const res = db()
       .prepare(
         `insert into submissions (id, question_id, observer_id, option_index, free_text, image_key, image_sha256,
            lat, lng, accuracy_m, distance_m, captured_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          where exists (select 1 from questions where id = ? and status = 'open' and closes_at > ?)
+            and (select count(*) from submissions where question_id = ?) < ?`,
       )
       .run(
         id,
         q.id,
         input.observer_id,
         input.option_index,
-        input.free_text || null,
+        q.allow_free_text === 1 ? input.free_text || null : null,
         key,
         hash,
         input.lat,
@@ -972,7 +1030,12 @@ export async function addSubmission(input: {
         Math.round(input.accuracy_m),
         input.distance_m,
         input.captured_at,
+        q.id,
+        new Date().toISOString(),
+        q.id,
+        q.max_responses,
       );
+    if (res.changes === 0) return { ok: false, status: 409, reason: "This question has closed." };
   } catch (err) {
     // Unique constraints catch a double-tap race on the same person or photo.
     if (String(err).includes("UNIQUE")) return { ok: false, status: 409, reason: "That answer was already recorded." };
@@ -1044,12 +1107,14 @@ export function deletePushSubscription(endpoint: string): boolean {
 /** SQL bounding-box prefilter (same math as nearbyQuestions); exact distance filtering is selectPushTargets. */
 export function pushSubscriptionsNear(lat: number, lng: number, radiusM: number): PushSubscriptionRecord[] {
   const dLat = radiusM / 1000 / 111.32;
-  const dLng = radiusM / 1000 / (111.32 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  const polar = Math.abs(lat) + dLat >= 90;
+  const dLng = polar ? Number.POSITIVE_INFINITY : radiusM / 1000 / (111.32 * Math.cos((lat * Math.PI) / 180));
+  const lngBox = lngBoxSql(lng, dLng);
   return db()
     .prepare(
-      "select * from push_subscriptions where lat is not null and lat between ? and ? and lng between ? and ?",
+      `select * from push_subscriptions where lat is not null and lat between ? and ? and ${lngBox.sql}`,
     )
-    .all(lat - dLat, lat + dLat, lng - dLng, lng + dLng) as PushSubscriptionRecord[];
+    .all(lat - dLat, lat + dLat, ...lngBox.params) as PushSubscriptionRecord[];
 }
 
 /** Rate limit + no double send: one atomic UPDATE claims the slot for `now`. */
@@ -1064,6 +1129,8 @@ export function claimPushSlot(endpoint: string, nowMs: number, minIntervalMs: nu
 
 // ---------- settle ----------
 
+const STUCK_SETTLEMENT_MS = 2 * 60_000;
+
 export async function settleDue(): Promise<number> {
   const due = db()
     .prepare("select id from questions where status = 'open' and closes_at <= ?")
@@ -1072,6 +1139,21 @@ export async function settleDue(): Promise<number> {
   for (const { id } of due) {
     if (await settle(id)) settled += 1;
   }
+  // Resume settlements interrupted between the 'closed' claim and the raffle insert.
+  const cutoff = new Date(Date.now() - STUCK_SETTLEMENT_MS).toISOString();
+  const stuck = db()
+    .prepare("select id from questions where status = 'closed' and closed_at < ?")
+    .all(cutoff) as { id: string }[];
+  for (const { id } of stuck) {
+    const claim = db()
+      .prepare("update questions set closed_at = ? where id = ? and status = 'closed' and closed_at < ?")
+      .run(new Date().toISOString(), id, cutoff);
+    if (claim.changes === 1) {
+      await finishSettlement(id);
+      settled += 1;
+    }
+  }
+  retryTreasuryTransfers();
   retryXrplPots();
   return settled;
 }
@@ -1089,36 +1171,81 @@ async function settle(id: string) {
     .prepare("update questions set status = 'closed', closed_at = ? where id = ? and status = 'open'")
     .run(new Date().toISOString(), id);
   if (claim.changes !== 1) return false;
+  await finishSettlement(id);
+  return true;
+}
+
+const winnerEvmAddress = (submissionId: string) =>
+  (
+    db()
+      .prepare("select o.evm_address from submissions s join observers o on o.id = s.observer_id where s.id = ?")
+      .get(submissionId) as { evm_address: string | null } | undefined
+  )?.evm_address ?? undefined;
+
+/**
+ * Everything after the 'closed' claim: expiry refund or raffle + winner payout.
+ * Runs inside settle() and on its own when resuming a stuck 'closed' question.
+ */
+async function finishSettlement(id: string) {
   const q = questionById(id)!;
   const subs = submissionsFor(id);
   if (subs.length < q.min_responses) {
-    db().prepare("update questions set status = 'expired' where id = ?").run(id);
-    // Only questions that were actually paid over x402 are refunded.
-    if (q.payment_tx && q.payer_address) {
-      const refund = await sendFromTreasury("refund", q.payer_address, prizeUnits(q.prize_amount));
-      if (refund) db().prepare("update questions set refund_tx = ? where id = ?").run(refund, id);
+    db().exec("begin immediate");
+    try {
+      db().prepare("update questions set status = 'expired' where id = ?").run(id);
+      // Only questions that were actually paid over x402 are refunded.
+      if (q.payment_tx && q.payer_address) {
+        db()
+          .prepare(
+            `insert or ignore into treasury_transfers (question_id, kind, to_address, amount_units, updated_at)
+             values (?, 'refund', ?, ?, ?)`,
+          )
+          .run(id, q.payer_address, prizeUnits(q.prize_amount).toString(), new Date().toISOString());
+      }
+      db().exec("commit");
+    } catch (err) {
+      db().exec("rollback");
+      throw err;
     }
+    await processTransfer(id, "refund");
     await settleXrplPot(id);
     trackWebhook(id);
-    return true;
+    return;
   }
   const block = await latestBlock();
   const entropy = block?.hash ?? `offline:${sha256Hex(q.closes_at)}`;
   const draw = drawWinner(q.seed, entropy, q.id, subs.map((s) => s.id));
-  db()
-    .prepare(
-      `insert into raffles (question_id, seed_reveal, entropy_block_hash, entropy_block_number, winner_submission_id)
-       values (?, ?, ?, ?, ?)`,
-    )
-    .run(id, q.seed, entropy, block?.number ?? null, draw?.winner ?? null);
-  db().prepare("update questions set status = 'settled' where id = ?").run(id);
-  const xrplWinner = draw?.winner ? xrplPayoutAddress(draw.winner) : undefined;
-  const escrowed = Boolean(escrowRow(id));
-  // An XRPL-rail winner of an escrowed pot is paid from the escrow instead of in AUSD.
-  if (q.payment_tx && draw?.winner && !(escrowed && xrplWinner)) await payWinner(id, draw.winner, q.prize_amount);
+  db().exec("begin immediate");
+  try {
+    db()
+      .prepare(
+        `insert or ignore into raffles (question_id, seed_reveal, entropy_block_hash, entropy_block_number, winner_submission_id)
+         values (?, ?, ?, ?, ?)`,
+      )
+      .run(id, q.seed, entropy, block?.number ?? null, draw?.winner ?? null);
+    // The stored raffle row wins (e.g. when resuming a settlement that already drew).
+    const raffle = db().prepare("select * from raffles where question_id = ?").get(id) as RaffleRow;
+    db().prepare("update questions set status = 'settled' where id = ?").run(id);
+    const winner = raffle.winner_submission_id;
+    const xrplWinner = winner ? xrplPayoutAddress(winner) : undefined;
+    const escrowed = Boolean(escrowRow(id));
+    // An XRPL-rail winner of an escrowed pot is paid from the escrow instead of in AUSD.
+    if (q.payment_tx && winner && !(escrowed && xrplWinner)) {
+      db()
+        .prepare(
+          `insert or ignore into treasury_transfers (question_id, kind, to_address, amount_units, updated_at)
+           values (?, 'payout', ?, ?, ?)`,
+        )
+        .run(id, winnerEvmAddress(winner) ?? null, winnerPayoutUnits(potAmount(q)).toString(), new Date().toISOString());
+    }
+    db().exec("commit");
+  } catch (err) {
+    db().exec("rollback");
+    throw err;
+  }
+  await processTransfer(id, "payout");
   await settleXrplPot(id);
   trackWebhook(id);
-  return true;
 }
 
 const pendingWebhooks = new Set<Promise<void>>();
@@ -1169,21 +1296,227 @@ async function deliverWebhook(id: string): Promise<void> {
 }
 
 /** Treasury pays the raffle winner (prize minus the platform fee) to their EVM payout address. */
-async function payWinner(questionId: string, winnerSubmissionId: string, prizeUsd: number) {
-  const winner = db()
-    .prepare("select o.evm_address from submissions s join observers o on o.id = s.observer_id where s.id = ?")
-    .get(winnerSubmissionId) as { evm_address: string | null } | undefined;
-  if (!winner?.evm_address) {
-    console.warn(`[payments] winner of ${questionId} has no payout address; payout pending`);
+const PAYMENT_RETRY_MS = 60_000;
+const PAYMENT_RECHECK_MS = 30_000;
+const PAYMENT_STALE_MS = 5 * 60_000;
+
+const pendingTransfers = new Set<Promise<void>>();
+
+function trackTransfer(questionId: string, kind: "payout" | "refund") {
+  const pending = processTransfer(questionId, kind);
+  pendingTransfers.add(pending);
+  void pending.then(
+    () => pendingTransfers.delete(pending),
+    () => pendingTransfers.delete(pending),
+  );
+}
+
+export async function flushTreasuryTransfers(): Promise<void> {
+  while (pendingTransfers.size) await Promise.all([...pendingTransfers]);
+}
+
+/** Fire-and-forget retry for every unpaid ledger row; the atomic claim makes sweeps safe to overlap. */
+function retryTreasuryTransfers() {
+  const rows = db()
+    .prepare("select question_id, kind from treasury_transfers where state != 'paid'")
+    .all() as { question_id: string; kind: "payout" | "refund" }[];
+  for (const row of rows) trackTransfer(row.question_id, row.kind);
+}
+
+const transferRow = (questionId: string, kind: string) =>
+  db().prepare("select * from treasury_transfers where question_id = ? and kind = ?").get(questionId, kind) as
+    | TreasuryTransferRow
+    | undefined;
+
+function markPaid(questionId: string, kind: "payout" | "refund", tx: string) {
+  db().exec("begin immediate");
+  try {
+    db()
+      .prepare(
+        "update treasury_transfers set state = 'paid', tx = ?, last_error = null, updated_at = ? where question_id = ? and kind = ?",
+      )
+      .run(tx, new Date().toISOString(), questionId, kind);
+    if (kind === "payout") db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
+    else db().prepare("update questions set refund_tx = ? where id = ?").run(tx, questionId);
+    db().exec("commit");
+  } catch (err) {
+    db().exec("rollback");
+    throw err;
+  }
+}
+
+/**
+ * Drive one ledger row toward 'paid'. Never throws; safe to call concurrently —
+ * only the atomic claim lets one caller attempt the transfer.
+ */
+async function processTransfer(questionId: string, kind: "payout" | "refund"): Promise<void> {
+  try {
+    await runTransfer(questionId, kind);
+  } catch (err) {
+    console.error(
+      `[payments] ${kind} transfer for ${questionId} failed:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+async function runTransfer(questionId: string, kind: "payout" | "refund"): Promise<void> {
+  let row = transferRow(questionId, kind);
+  if (!row || row.state === "paid") return;
+  const nowIso = () => new Date().toISOString();
+
+  if (kind === "payout" && row.to_address === null) {
+    // The winner had no EVM address at draw time; re-resolve so a wallet added later unlocks payout.
+    const raffle = db()
+      .prepare("select winner_submission_id from raffles where question_id = ?")
+      .get(questionId) as { winner_submission_id: string | null } | undefined;
+    const evm = raffle?.winner_submission_id ? winnerEvmAddress(raffle.winner_submission_id) : undefined;
+    if (!evm) {
+      db()
+        .prepare("update treasury_transfers set last_error = 'no_payout_address', updated_at = ? where question_id = ? and kind = ?")
+        .run(nowIso(), questionId, kind);
+      return;
+    }
+    // The address is locked once set.
+    db()
+      .prepare("update treasury_transfers set to_address = ?, updated_at = ? where question_id = ? and kind = ? and to_address is null")
+      .run(evm, nowIso(), questionId, kind);
+    row = transferRow(questionId, kind)!;
+  }
+
+  if (!isTreasuryConfigured()) {
+    db()
+      .prepare("update treasury_transfers set last_error = 'treasury_not_configured', updated_at = ? where question_id = ? and kind = ?")
+      .run(nowIso(), questionId, kind);
     return;
   }
-  const q = questionById(questionId);
-  const tx = await sendFromTreasury(
-    "payout",
-    winner.evm_address,
-    winnerPayoutUnits(q ? potAmount(q) : prizeUsd),
-  );
-  if (tx) db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
+
+  const now = Date.now();
+  const claim = db()
+    .prepare(
+      `update treasury_transfers set state = 'sending', updated_at = ?, attempts = attempts + 1
+        where question_id = ? and kind = ? and (
+             state = 'pending'
+          or (state = 'failed' and updated_at < ?)
+          or (state = 'sent' and updated_at < ?)
+          or (state = 'sending' and updated_at < ?))`,
+    )
+    .run(
+      nowIso(),
+      questionId,
+      kind,
+      new Date(now - PAYMENT_RETRY_MS).toISOString(),
+      new Date(now - PAYMENT_RECHECK_MS).toISOString(),
+      new Date(now - PAYMENT_STALE_MS).toISOString(),
+    );
+  if (claim.changes !== 1) return;
+
+  const claimed = transferRow(questionId, kind)!;
+  if (claimed.auth_nonce) {
+    // A facilitator authorization may have been broadcast; check before signing anew.
+    try {
+      const used = await ausdAuthorizationUsed(claimed.auth_nonce as `0x${string}`);
+      if (used) {
+        const tx = await findAuthorizationTx(
+          claimed.auth_nonce as `0x${string}`,
+          claimed.from_block !== null ? BigInt(claimed.from_block) : null,
+        );
+        if (tx) {
+          markPaid(questionId, kind, tx);
+          return;
+        }
+        db()
+          .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+          .run("authorization used; tx not found yet", nowIso(), questionId, kind);
+        return;
+      }
+      // Past validBefore + grace an unused authorization can never land: sign a fresh one.
+      if (Math.floor(Date.now() / 1000) > (claimed.auth_valid_before ?? 0) + 30) {
+        db()
+          .prepare("update treasury_transfers set auth_nonce = null, auth_valid_before = null, from_block = null where question_id = ? and kind = ?")
+          .run(questionId, kind);
+      } else {
+        db()
+          .prepare("update treasury_transfers set state = 'sent', updated_at = ? where question_id = ? and kind = ?")
+          .run(nowIso(), questionId, kind);
+        return;
+      }
+    } catch (err) {
+      db()
+        .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+        .run(err instanceof Error ? err.message : String(err), nowIso(), questionId, kind);
+      return;
+    }
+  }
+
+  const fresh = transferRow(questionId, kind)!;
+  if (fresh.raw_tx && fresh.tx) {
+    // A previous attempt may have broadcast; check before signing anything new.
+    const status = await ausdTxStatus(fresh.tx as `0x${string}`);
+    if (status === "success") {
+      markPaid(questionId, kind, fresh.tx);
+      return;
+    }
+    if (status === "reverted") {
+      db().prepare("update treasury_transfers set tx = null, raw_tx = null where question_id = ? and kind = ?").run(questionId, kind);
+    } else {
+      try {
+        const resend = await rebroadcastRawTx(fresh.raw_tx as `0x${string}`);
+        if (resend === "ok") {
+          db()
+            .prepare("update treasury_transfers set state = 'sent', updated_at = ? where question_id = ? and kind = ?")
+            .run(nowIso(), questionId, kind);
+          return;
+        }
+        // nonce_used: the original may still have landed; check once, else sign fresh.
+        const again = await ausdTxStatus(fresh.tx as `0x${string}`);
+        if (again === "success") {
+          markPaid(questionId, kind, fresh.tx);
+          return;
+        }
+        db().prepare("update treasury_transfers set tx = null, raw_tx = null where question_id = ? and kind = ?").run(questionId, kind);
+      } catch (err) {
+        db()
+          .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+          .run(err instanceof Error ? err.message : String(err), nowIso(), questionId, kind);
+        return;
+      }
+    }
+  }
+
+  const result = await transferFromTreasury(kind, fresh.to_address, BigInt(fresh.amount_units), {
+    onSigned: ({ hash, raw }) =>
+      db()
+        .prepare(
+          "update treasury_transfers set tx = ?, raw_tx = ?, rail = 'direct', auth_nonce = null, auth_valid_before = null, from_block = null, updated_at = ? where question_id = ? and kind = ?",
+        )
+        .run(hash, raw, nowIso(), questionId, kind),
+    onAuthorized: (a) =>
+      db()
+        .prepare(
+          "update treasury_transfers set rail = 'facilitator', auth_nonce = ?, auth_valid_before = ?, from_block = ?, updated_at = ? where question_id = ? and kind = ?",
+        )
+        .run(a.nonce, a.validBefore, a.fromBlock, nowIso(), questionId, kind),
+  });
+  if (result.status === "confirmed") {
+    markPaid(questionId, kind, result.tx);
+  } else if (result.status === "unconfirmed_authorization") {
+    db()
+      .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+      .run(result.error, nowIso(), questionId, kind);
+  } else if (result.status === "failed") {
+    db()
+      .prepare("update treasury_transfers set state = 'failed', tx = null, raw_tx = null, last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+      .run(result.error, nowIso(), questionId, kind);
+  } else if (result.status === "unconfirmed") {
+    db()
+      .prepare("update treasury_transfers set state = 'sent', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+      .run(result.error, nowIso(), questionId, kind);
+  } else {
+    db()
+      .prepare("update treasury_transfers set state = 'pending', last_error = ?, updated_at = ? where question_id = ? and kind = ?")
+      .run(result.reason, nowIso(), questionId, kind);
+  }
 }
 
 // ---------- XRPL testnet: pot escrows and observer credentials ----------
@@ -1633,13 +1966,15 @@ export async function questionsByAgent(agentLabel: string, origin: string) {
 export function coverage(lat: number, lng: number, radiusM = 1000, windowMinutes = 60) {
   const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
   const dLat = radiusM / 111_320;
-  const dLng = radiusM / (111_320 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
+  const polar = Math.abs(lat) + dLat >= 90;
+  const dLng = polar ? Number.POSITIVE_INFINITY : radiusM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const lngBox = lngBoxSql(lng, dLng);
   const rows = db()
     .prepare(
       `select observer_id, lat, lng from submissions
-        where captured_at >= ? and lat between ? and ? and lng between ? and ?`,
+        where captured_at >= ? and lat between ? and ? and ${lngBox.sql}`,
     )
-    .all(since, lat - dLat, lat + dLat, lng - dLng, lng + dLng) as { observer_id: string; lat: number; lng: number }[];
+    .all(since, lat - dLat, lat + dLat, ...lngBox.params) as { observer_id: string; lat: number; lng: number }[];
   const near = new Set(rows.filter((r) => distanceM(lat, lng, r.lat, r.lng) <= radiusM).map((r) => r.observer_id));
   return { active_observers: near.size, window_minutes: windowMinutes, radius_m: radiusM };
 }
