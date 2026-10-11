@@ -15,6 +15,7 @@ import { EmptyState } from "./ui/empty-state";
 import type { ObserverStats } from "@/lib/reputation";
 import { BadgeGrid, pct } from "./badges";
 import { PushOptIn } from "./push-opt-in";
+import { XrplWalletSetup } from "./xrpl-wallet-setup";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs } from "./ui/tabs";
 
@@ -203,7 +204,7 @@ export function MeView() {
                   {(
                     [
                       ["evm", "Digital dollars"],
-                      ["xrpl", "XRP"],
+                      ["xrpl", "RLUSD (XRP Ledger)"],
                     ] as const
                   ).map(([value, label]) => (
                     <label
@@ -226,7 +227,7 @@ export function MeView() {
                   ))}
                 </div>
                 {me.xrpl && !me.xrpl.enabled && rail === "xrpl" && (
-                  <p className="text-[13px] text-muted">XRP payouts aren&apos;t switched on here yet, so you&apos;ll get digital dollars instead.</p>
+                  <p className="text-[13px] text-muted">RLUSD payouts aren&apos;t switched on here yet, so you&apos;ll get digital dollars instead.</p>
                 )}
               </fieldset>
               {rail === "xrpl" && (
@@ -261,10 +262,23 @@ export function MeView() {
             <Disclosure title="What kind of wallet?" className="mt-4 bg-surface-2 ring-0">
               <p className="text-[13.5px] leading-relaxed text-muted">
                 Any EVM address works (MetaMask, Coinbase Wallet, Rainbow…). Digital dollars are AUSD, a dollar stablecoin, on the Base
-                Sepolia test network. XRP prizes are held in an XRPL testnet escrow and released to your r-address.
+                Sepolia test network. Prizes are locked in an XRP Ledger escrow and paid to you in RLUSD, a dollar stablecoin, when you
+                win. No RLUSD trust line? You get XRP instead.
               </p>
             </Disclosure>
           </Card>
+      )}
+      {me?.xrpl && (rail === "xrpl" || me.observer.xrpl_address) && (
+        <div className="[&>*]:mt-0">
+          <XrplWalletSetup
+            badge={<CredentialBadge xrpl={me.xrpl} hasAddress={Boolean(me.observer.xrpl_address)} />}
+            onAddress={(address) => {
+              setXrplAddress(address);
+              setRail("xrpl");
+              setMe((m) => (m ? { ...m, observer: { ...m.observer, xrpl_address: address, payout_rail: "xrpl" } } : m));
+            }}
+          />
+        </div>
       )}
       <Card className="p-5">
         <h2 className="flex items-center gap-2 text-[16px] font-semibold tracking-tight">

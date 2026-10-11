@@ -257,7 +257,7 @@ function Prize({ r }: { r: QuestionResults }) {
           <p className="text-[16px] font-semibold tracking-tight">
             {settled
               ? r.raffle.winner_observer
-                ? `${r.raffle.winner_observer} won ${r.raffle.xrpl?.payout_tx ? `${r.raffle.xrpl.amount_xrp} XRP` : prize}`
+                ? `${r.raffle.winner_observer} wins ${r.raffle.xrpl?.payout_tx ? `${r.raffle.xrpl.payout_amount ?? r.raffle.xrpl.amount_xrp} ${r.raffle.xrpl.payout_currency ?? "XRP"} on the XRP Ledger` : prize}`
                 : "No winner was drawn"
               : r.status === "expired"
                 ? "No draw this time"
@@ -574,9 +574,21 @@ function XrplRows({ pot }: { pot: NonNullable<QuestionResults["raffle"]["xrpl"]>
         </dd>
       </div>
       <Row label="Escrow" value={pot.escrow_tx} href={pot.escrow_url} />
+      {pot.settle_mode === "batch" && pot.batch_tx && (
+        <>
+          <div className="grid grid-cols-[96px_1fr] items-center gap-3">
+            <dt className="font-sans text-[13px] text-muted">Settlement</dt>
+            <dd className="font-sans text-[13px]">Settled atomically in one Batch</dd>
+          </div>
+          <Row label="Batch" value={pot.batch_tx} href={pot.batch_url} />
+        </>
+      )}
       {pot.finish_tx && <Row label="Finish" value={pot.finish_tx} href={pot.finish_url} />}
       {pot.cancel_tx && <Row label="Cancel" value={pot.cancel_tx} href={pot.cancel_url} />}
-      {pot.payout_tx && <Row label="XRP payout" value={pot.payout_tx} href={pot.payout_url} />}
+      {pot.payout_tx && (
+        <Row label={`${pot.payout_currency ?? "XRP"} payout`} value={pot.payout_tx} href={pot.payout_url} />
+      )}
+      {pot.fee_tx && <Row label="Platform fee" value={pot.fee_tx} href={pot.fee_url} />}
     </>
   );
 }
