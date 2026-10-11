@@ -367,6 +367,22 @@ The Gemini oracle attaches `market_ref` (provider, contract, `implied_yes`) to e
 
 **Before the clock:** For a paid demo, fund the Base Sepolia agent and treasury wallets, configure the agent's AUSD wallet and server treasury, and turn off Render's `ALLOW_UNPAID_QUESTIONS=1`. Open [`/live`](https://a-eye-1zsv.onrender.com/live) on the projector and have judges scan its QR code. If payment setup is unavailable, leave unpaid mode on and explain that no payment transaction or payout is expected. Don't merge to main within ~5 minutes of or during the demo: every deploy takes the site down for 1–2 minutes.
 
+### Hackathon traction seed
+
+Preview the Chou Hall and Haas courtyard question seeds against the hosted API without posting:
+
+```bash
+npx tsx scripts/seed-traction.mts
+```
+
+To post and pay for the non-duplicate questions, set `A_EYE_AGENT_PRIVATE_KEY` and explicitly pass `--live`:
+
+```bash
+npx tsx scripts/seed-traction.mts --live
+```
+
+Use `--only 1,3` to select seed indices and `--max-spend 0.1` to set the spend cap. The script skips matching open questions and enforces the cap after skips.
+
 | Time | Demo step | Fallback |
 | --- | --- | --- |
 | 0:00–0:30 | Check the projector dashboard and judge phones. Confirm the question agent has its LLM key and can reach the configured MCP server. | If the agent cannot run, post a test question from `/agents`; if phones cannot scan the QR, share the question or answer URL directly. |
