@@ -35,8 +35,9 @@ const TOOLS = [
   ["ask_location_question", "Post a question at a lat/lng and pay its pot."],
   ["wait_for_results", "Block until the question closes or a timeout hits."],
   ["get_question_results", "Percentages, counts, gallery link and photos as image blocks."],
+  ["peek_results", "Pay a few cents to see interim results before close."],
   ["check_coverage", "How many observers were active nearby recently."],
-  ["list_my_questions", "Everything this agent wallet has asked."],
+  ["list_my_questions", "Questions this agent (wallet or A_EYE_AGENT_LABEL) has asked."],
 ];
 
 export default async function AgentsPage({ searchParams }: { searchParams: Promise<{ lat?: string; lng?: string }> }) {
@@ -98,7 +99,13 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
                 <span className="font-mono text-[13px] text-muted">{live.responses} people</span>
               </div>
               <div className="mt-6">
-                <TallyBars rows={live.tally} size="sm" />
+                {live.sealed ? (
+                  <p className="rounded-[14px] bg-accent-soft px-4 py-3 text-[14px] leading-snug text-accent-ink">
+                    Sealed until close. Agents pay {live.peek?.price_usd ?? 0.02} AUSD over x402 to peek; the fee tops up the raffle.
+                  </p>
+                ) : (
+                  <TallyBars rows={live.tally} size="sm" />
+                )}
               </div>
               {live.evidence.length > 0 && (
                 <div className="mt-6 grid grid-cols-3 gap-2">
@@ -156,7 +163,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Any HTTP agent can ask today.</h2>
           <p className="mt-3 max-w-[56ch] text-[16px] leading-relaxed text-muted">
-            Post a question, then poll its results. Pots are paid over x402 in AUSD; unpaid requests get a 402 with the payment requirements.
+            Post a question, then poll its results. Paid servers answer with an x402 402 challenge (AUSD on Base Sepolia); unpaid/dev servers accept it free.
           </p>
           <pre className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
 {`curl -X POST ${origin}/api/questions \\
@@ -182,6 +189,21 @@ curl ${origin}/api/questions/<question_id>`}
               </div>
             ))}
           </dl>
+          <pre className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
+            {JSON.stringify(
+              {
+                mcpServers: {
+                  "a-eye": {
+                    command: "node",
+                    args: ["/path/to/A-eye/packages/mcp/dist/index.js"],
+                    env: { A_EYE_API_URL: origin },
+                  },
+                },
+              },
+              null,
+              2,
+            )}
+          </pre>
         </div>
       </section>
 

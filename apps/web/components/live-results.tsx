@@ -3,8 +3,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, Check, CircleCheck, CircleX, Copy, Globe, ImageIcon, MapPin, ShieldCheck, Trophy, Users } from "lucide-react";
-import type { Evidence, QuestionResults } from "@a-eye/shared";
+import { ArrowLeft, Bot, Camera, Check, CircleCheck, CircleX, Copy, Eye, Globe, ImageIcon, Lock, MapPin, Receipt, ShieldCheck, Trophy, Users } from "lucide-react";
+import type { AusdFlow, Evidence, QuestionResults } from "@a-eye/shared";
 import { marketVsHumans, webVsHumans } from "@/lib/compare";
 import { formatDistance } from "@/lib/geo";
 import { raffleSnippet } from "@/lib/raffle-snippet";
@@ -25,6 +25,7 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
   const [r, setR] = useState(initial);
   const [closing, setClosing] = useState(false);
   const [zoom, setZoom] = useState<Evidence | null>(null);
+  const [peekHelp, setPeekHelp] = useState(false);
   const seen = useRef(initial.evidence.length);
   const open = r.status === "open";
 
@@ -89,7 +90,9 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
               </span>
             </p>
             <div className="mt-5">
-              {r.responses > 0 ? (
+              {r.sealed ? (
+                <Sealed r={r} onPeekHelp={() => setPeekHelp(true)} />
+              ) : r.responses > 0 ? (
                 <TallyBars rows={r.tally} />
               ) : (
                 <p className="text-[15px] leading-relaxed text-muted">No answers yet. The split appears here as people respond.</p>
@@ -119,9 +122,16 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
 
         <section aria-label="Photos from people on site">
           <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">
-            Photos · {r.evidence.length}
+            Photos · {r.sealed ? r.responses : r.evidence.length}
           </h2>
-          {r.evidence.length === 0 ? (
+          {r.sealed ? (
+            <EmptyState
+              icon={<Lock className="size-7" aria-hidden />}
+              title={r.responses > 0 ? `${r.responses} ${r.responses === 1 ? "photo is" : "photos are"} in` : "Photos land here"}
+              body="Photos and answers are revealed when the question closes, so nobody is swayed by earlier answers."
+              className="aspect-[4/3] justify-center"
+            />
+          ) : r.evidence.length === 0 ? (
             <EmptyState
               icon={<ImageIcon className="size-7" aria-hidden />}
               title="Photos land here"
@@ -140,6 +150,8 @@ export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: b
           )}
         </section>
       </div>
+
+      <PeekSheet r={r} open={peekHelp} onOpenChange={setPeekHelp} />
 
       <Sheet open={Boolean(zoom)} onOpenChange={(o) => !o && setZoom(null)} title="Photo" description={zoom?.answer}>
         {zoom && (
@@ -248,6 +260,11 @@ function Prize({ r }: { r: QuestionResults }) {
                 ? `Only ${r.responses} of ${r.min_responses} needed answers came in, so the asker gets their money back.`
                 : "Everyone with a verified photo gets one entry. The winner is picked at random when it closes."}
           </p>
+          {peekBoost(r) > 0 && (
+            <p className="mt-1.5 text-[13px] font-medium text-accent-ink">
+              Includes {fmt(peekBoost(r))} {r.raffle.currency} added by agents who paid for an early look.
+            </p>
+          )}
         </div>
       </Card>
 
@@ -293,7 +310,135 @@ function Prize({ r }: { r: QuestionResults }) {
         )}
         {settled && r.raffle.winner_submission_id && <VerifySnippet r={r} />}
       </Disclosure>
+
+      {(r.ausd_flows?.length ?? 0) > 0 && <MoneyTrail flows={r.ausd_flows} />}
     </div>
+  );
+}
+
+const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+const peekBoost = (r: QuestionResults) => Math.round(((r.pot_usd ?? 0) - (r.prize_amount ?? 0)) * 100) / 100;
+
+function Sealed({ r, onPeekHelp }: { r: QuestionResults; onPeekHelp: () => void }) {
+  return (
+    <div>
+      <p className="flex items-start gap-2 text-[15px] leading-relaxed text-muted">
+        <Lock className="mt-1 size-4 shrink-0" aria-hidden />
+        <span>The split stays hidden until this closes, so everyone answers on their own.</span>
+      </p>
+      <ul className="mt-4 flex flex-wrap gap-2" aria-label="Choices">
+        {r.tally.map((t) => (
+          <li key={t.option} className="rounded-full bg-surface-2 px-3 py-1.5 text-[13.5px] font-medium">
+            {t.option}
+          </li>
+        ))}
+      </ul>
+      {r.peek && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-accent-soft px-4 py-3">
+          <p className="text-[13.5px] leading-snug text-accent-ink">
+            Agents can pay {fmt(r.peek.price_usd)} {r.currency} for an early look. It goes into the prize.
+          </p>
+          <Button variant="soft" size="sm" onClick={onPeekHelp}>
+            <Eye className="size-4" aria-hidden /> For agents
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PeekSheet({ r, open, onOpenChange }: { r: QuestionResults; open: boolean; onOpenChange: (o: boolean) => void }) {
+  if (!r.peek) return null;
+  const curl = `curl -i ${r.peek.url}`;
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Early look for agents"
+      description={`Pay ${fmt(r.peek.price_usd)} AUSD over x402 to read the live split and photos before close.`}
+    >
+      <div className="grid gap-4 text-[14px] leading-relaxed">
+        <ol className="grid gap-2 text-muted">
+          <li>
+            <span className="font-semibold text-ink">1.</span> Call the paid endpoint. It answers <code className="font-mono">402</code> with an exact
+            AUSD price on Base Sepolia.
+          </li>
+          <li>
+            <span className="font-semibold text-ink">2.</span> Your x402 client signs a gasless ERC-3009 authorization; the facilitator settles it.
+          </li>
+          <li>
+            <span className="font-semibold text-ink">3.</span> You get the interim tally and evidence. The fee tops up this question&apos;s raffle pot.
+          </li>
+        </ol>
+        <Snippet label="HTTP" value={curl} />
+        <Snippet label="MCP tool" value={`peek_results { "question_id": "${r.id}" }`} />
+        <p className="text-[13px] text-muted">Final results are free once the question closes.</p>
+      </div>
+    </Sheet>
+  );
+}
+
+function Snippet({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="mb-1 flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-wide text-muted">
+        <Bot className="size-3.5" aria-hidden /> {label}
+      </p>
+      <div className="flex items-center gap-2 rounded-[12px] bg-surface-2 p-2 pl-3">
+        <code className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{value}</code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(value);
+            toast.success(`${label} copied`);
+          }}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface hover:text-ink"
+          aria-label={`Copy ${label}`}
+        >
+          <Copy className="size-3.5" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const FLOW_LABEL: Record<AusdFlow["kind"], string> = {
+  bounty: "Prize paid by",
+  peek: "Early look by",
+  payout: "Prize sent to",
+  refund: "Refund to",
+};
+
+/** Where the money went, with receipts. Tucked away for agents and judges. */
+function MoneyTrail({ flows }: { flows: AusdFlow[] }) {
+  return (
+    <Disclosure title="Where the money went" icon={<Receipt className="size-5" aria-hidden />}>
+      <p className="text-[14px] leading-relaxed text-muted">
+        Every AUSD movement for this question on Base Sepolia, gasless via x402 and ERC-3009. Open a receipt to check it on BaseScan.
+      </p>
+      <ol className="mt-3 divide-y divide-line">
+        {flows.map((f) => (
+          <li key={`${f.kind}-${f.tx}`} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-0.5 py-2.5">
+            <p className="text-[14px]">
+              <span className="text-muted">{FLOW_LABEL[f.kind]}</span>{" "}
+              <span className="font-medium">{f.kind === "bounty" || f.kind === "peek" ? f.from_label : f.to_label}</span>
+            </p>
+            <p className={cn("text-right font-mono text-[14px] font-semibold tabular-nums", (f.kind === "payout" || f.kind === "refund") && "text-accent-ink")}>
+              {f.kind === "payout" || f.kind === "refund" ? "−" : "+"}
+              {fmt(f.amount)} {f.currency}
+            </p>
+            <a
+              href={f.url}
+              target="_blank"
+              rel="noreferrer"
+              className="col-span-2 w-fit font-mono text-[12px] text-muted underline decoration-line underline-offset-4 hover:text-ink"
+            >
+              tx {short(f.tx)}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </Disclosure>
   );
 }
 

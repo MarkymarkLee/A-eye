@@ -2,6 +2,7 @@ import type { FetchLike } from "@a-eye/mcp/api";
 import { GET as getCoverage } from "@/app/api/coverage/route";
 import { GET as getImage } from "@/app/api/images/[...key]/route";
 import { GET as getQuestion } from "@/app/api/questions/[id]/route";
+import { GET as getPeek } from "@/app/api/questions/[id]/peek/route";
 import { GET as getMine } from "@/app/api/questions/mine/route";
 import { GET as getQuestions, POST as postQuestion } from "@/app/api/questions/route";
 
@@ -29,6 +30,11 @@ export function createInProcessFetch(publicOrigin: string, incoming: Headers): F
       const key = url.pathname.slice("/api/images/".length);
       if (!key) return notFound();
       return getImage(req, { params: Promise.resolve({ key: key.split("/").map(decodeURIComponent) }) });
+    }
+
+    const peekMatch = /^\/api\/questions\/([^/]+)\/peek$/.exec(url.pathname);
+    if (method === "GET" && peekMatch) {
+      return getPeek(req, { params: Promise.resolve({ id: decodeURIComponent(peekMatch[1]!) }) });
     }
 
     const match = /^\/api\/questions\/([^/]+)$/.exec(url.pathname);

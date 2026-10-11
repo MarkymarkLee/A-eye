@@ -13,6 +13,9 @@
     "test": "npm run test --workspaces --if-present",
     "mcp": "npm run start -w a-eye-mcp",
     "vapid:keys": "npm run vapid:keys -w @a-eye/web",
+    "db:backup": "node scripts/db-backup.mjs backup",
+    "db:restore": "node scripts/db-backup.mjs restore",
+    "db:backups": "node scripts/db-backup.mjs list",
     "xrpl:setup": "tsx scripts/xrpl-setup.ts",
     "xrpl:demo": "tsx scripts/xrpl-demo.ts"
   },

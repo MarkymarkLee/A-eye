@@ -1,4 +1,9 @@
 import { AUSD } from "@a-eye/shared";
+import { X402_NETWORK } from "@a-eye/shared";
+import { type FacilitatorClient } from "@x402/core/server";
+import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { facilitatorFromEnv } from "./x402";
 import {
   createPublicClient,
   createWalletClient,
@@ -84,4 +89,44 @@ export async function transferAusd(to: string, amountUnits: bigint): Promise<Hex
   const receipt = await publicClient().waitForTransactionReceipt({ hash, confirmations: 1 });
   if (receipt.status !== "success") throw new Error(`AUSD transfer reverted: ${hash}`);
   return hash;
+}
+
+export async function transferAusdViaFacilitator(
+  to: string,
+  amountUnits: bigint,
+  facilitator?: FacilitatorClient,
+): Promise<Hex> {
+  if (!isAddress(to)) throw new Error(`Invalid recipient address: ${to}`);
+  if (amountUnits <= BigInt(0)) throw new Error("Amount must be positive");
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network: X402_NETWORK,
+    asset: AUSD.address,
+    amount: amountUnits.toString(),
+    payTo: getAddress(to),
+    maxTimeoutSeconds: 300,
+    extra: { ...AUSD.eip712 },
+  };
+  const partial = await new ExactEvmScheme(treasuryAccount()).createPaymentPayload(2, requirements);
+  const payload: PaymentPayload = {
+    ...partial,
+    accepted: requirements,
+    resource: {
+      url: `${process.env.A_EYE_PUBLIC_URL ?? "https://a-eye-1zsv.onrender.com"}/payouts`,
+      description: "A-eye treasury payout",
+      mimeType: "application/json",
+    },
+  };
+  const client = facilitator ?? facilitatorFromEnv();
+  const verified = await client.verify(payload, requirements);
+  if (!verified.isValid) {
+    const reason = [verified.invalidReason, verified.invalidMessage].filter(Boolean).join(": ");
+    throw new Error(reason || "Facilitator rejected treasury payout");
+  }
+  const settled = await client.settle(payload, requirements);
+  if (!settled.success) {
+    const reason = [settled.errorReason, settled.errorMessage].filter(Boolean).join(": ");
+    throw new Error(reason || "Facilitator failed to settle treasury payout");
+  }
+  return settled.transaction as Hex;
 }

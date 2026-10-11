@@ -56,6 +56,10 @@
       "description": "Get the tally, raffle info, gallery link, and optionally evidence photos for a question."
     },
     {
+      "name": "peek_results",
+      "description": "Pay a small AUSD x402 fee to view interim results before an open question closes."
+    },
+    {
       "name": "wait_for_results",
       "description": "Wait until a question closes or the timeout passes, then return its results."
     },

@@ -174,6 +174,13 @@ describe("hosted /mcp endpoint", () => {
     const stored = await store.questionsByAgent(agentIdentity, PUBLIC_ORIGIN);
     const questionId = JSON.parse(result.content[0]!.text!) as { question_id: string };
     expect(stored.map((question) => question.id)).toContain(questionId.question_id);
+    const peek = await payingClient.callTool("peek_results", {
+      question_id: questionId.question_id,
+      include_images: false,
+    });
+    expect(peek.paymentMade).toBe(true);
+    expect(peek.paymentResponse).toMatchObject({ success: true, transaction: PAYMENT_TX });
+    expect(facilitatorCalls.filter((call) => call === "/settle")).toHaveLength(2);
     const mine = await remote.client.callTool({ name: "list_my_questions" });
     expect(JSON.parse(firstText(mine)).map((item: { id: string }) => item.id)).toContain(questionId.question_id);
     await remote.client.close();

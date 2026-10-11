@@ -51,6 +51,7 @@ The private key is optional when the API allows unpaid questions. In paid mode, 
 
 - `ask_location_question`: ask a question about a place and fund its AUSD raffle bounty.
 - `get_question_results`: read the tally, raffle information, and optionally evidence photos.
+- `peek_results`: pay a small AUSD x402 fee to see results before an open question closes.
 - `wait_for_results`: wait for a question to close, then return its results.
 - `check_coverage`: check recently active observers near a location.
 - `list_my_questions`: list questions created by this agent.

@@ -10,7 +10,11 @@ vi.mock("@/app/api/images/[...key]/route", () => ({
       host: req.headers.get("x-forwarded-host"),
       proto: req.headers.get("x-forwarded-proto"),
       ip: req.headers.get("x-forwarded-for"),
-    }),
+  }),
+}));
+vi.mock("@/app/api/questions/[id]/peek/route", () => ({
+  GET: async (_req: Request, { params }: { params: Promise<{ id: string }> }) =>
+    Response.json({ peeked: (await params).id }),
 }));
 
 const { createInProcessFetch } = await import("./in-process-fetch");
@@ -49,6 +53,12 @@ describe("createInProcessFetch", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Not found" });
     expect(network).not.toHaveBeenCalled();
+  });
+
+  it("dispatches interim-results routes in process before the dynamic question route", async () => {
+    const fetch = createInProcessFetch("https://public.example", new Headers());
+    const response = await fetch("https://public.example/api/questions/q1/peek");
+    expect(await response.json()).toEqual({ peeked: "q1" });
   });
 
   it("uses global fetch for external presigned image URLs", async () => {

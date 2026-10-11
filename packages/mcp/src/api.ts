@@ -30,6 +30,8 @@ export class PaymentRequiredError extends ApiError {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+export type PeekResults = QuestionResults & { paid: boolean; payment_tx: string | null };
+
 export class AEyeApi {
   constructor(
     private readonly baseUrl: string,
@@ -43,14 +45,33 @@ export class AEyeApi {
   }
 
   private async requestWithHeaders<T>(path: string, init?: RequestInit) {
-    const res = await this.fetchImpl(new URL(path, this.baseUrl).toString(), {
-      ...init,
-      headers: { "content-type": "application/json", "x-a-eye-agent": this.agentLabel, ...init?.headers },
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(new URL(path, this.baseUrl).toString(), {
+        ...init,
+        headers: { "content-type": "application/json", "x-a-eye-agent": this.agentLabel, ...init?.headers },
+      });
+    } catch (cause) {
+      const causeMessage = cause instanceof Error ? cause.message : String(cause);
+      throw new ApiError(0, `Could not reach the A-eye API at ${this.baseUrl} (${causeMessage}). Check A_EYE_API_URL.`);
+    }
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {
-      const message =
+      let message =
         body && typeof body === "object" && "error" in body ? String(body.error) : `${res.status} ${res.statusText}`;
+      if (body && typeof body === "object" && "message" in body && typeof body.message === "string") {
+        message += `: ${body.message}`;
+      }
+      if (body && typeof body === "object" && "issues" in body && Array.isArray(body.issues)) {
+        const issues = body.issues.slice(0, 5).flatMap((issue) => {
+          if (!issue || typeof issue !== "object") return [];
+          const detail = issue as { path?: unknown; message?: unknown };
+          if (typeof detail.message !== "string") return [];
+          const path = Array.isArray(detail.path) ? detail.path.map(String).join(".") : "";
+          return [`${path ? `${path}: ` : ""}${detail.message}`];
+        });
+        if (issues.length) message += `: ${issues.join("; ")}`;
+      }
       const errorMessage =
         res.status === 402 && !this.paysAutomatically
           ? `${message}. Set AGENT_PRIVATE_KEY (a Base Sepolia wallet holding AUSD) so the MCP server can pay via x402.`
@@ -101,8 +122,30 @@ export class AEyeApi {
     };
   }
 
-  getResults(questionId: string) {
-    return this.request<QuestionResults>(`/api/questions/${encodeURIComponent(questionId)}`);
+  async getResults(questionId: string) {
+    const results = await this.request<QuestionResults>(`/api/questions/${encodeURIComponent(questionId)}`);
+    if (!Array.isArray(results?.tally) || !Array.isArray(results?.evidence)) {
+      throw new ApiError(502, `Unexpected response from A-eye API for question ${questionId}`);
+    }
+    return results;
+  }
+
+  async peekResults(questionId: string): Promise<PeekResults> {
+    return (await this.peekResultsPaid(questionId)).response;
+  }
+
+  async peekResultsPaid(
+    questionId: string,
+    payment?: PaymentPayload,
+  ): Promise<{ response: PeekResults; receipt: SettleResponse | null }> {
+    const { data, headers } = await this.requestWithHeaders<PeekResults>(
+      `/api/questions/${encodeURIComponent(questionId)}/peek`,
+      payment && { headers: { "PAYMENT-SIGNATURE": encodePaymentSignatureHeader(payment) } },
+    );
+    return {
+      response: { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) },
+      receipt: paymentResponseFromHeaders(headers),
+    };
   }
 
   coverage(lat: number, lng: number) {
