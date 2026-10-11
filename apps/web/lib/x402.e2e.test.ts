@@ -22,7 +22,9 @@ describe.skipIf(!enabled)("x402 live e2e (Base Sepolia)", () => {
         { price: () => ({ amountUnits: BigInt(10_000) }), payTo, description: "A-eye e2e" },
       );
       const account = privateKeyToAccount(agentKey as `0x${string}`);
-      const client = new x402Client().register("eip155:84532", new ExactEvmScheme(account));
+      const client = new x402Client().register("eip155:84532", new ExactEvmScheme(account)).setSpendControls({
+  allowedAssets: [{ network: "eip155:84532", asset: AUSD.address, maxAmountPerPayment: "25000000" }],
+});
       const pay = wrapFetchWithPayment((input, init) => route(new Request(input, init)), client);
 
       const res = await pay("http://local.test/api/questions", { method: "POST", body: JSON.stringify({ prize_usd: 0.01 }) });
