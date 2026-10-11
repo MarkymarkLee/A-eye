@@ -50,7 +50,7 @@ export class X402InputError extends Error {}
 const servers = new WeakMap<FacilitatorClient, Promise<x402ResourceServer>>();
 let defaultFacilitator: FacilitatorClient | undefined;
 
-function facilitatorFromEnv(): FacilitatorClient {
+export function facilitatorFromEnv(): FacilitatorClient {
   defaultFacilitator ??= new HTTPFacilitatorClient({ url: process.env.X402_FACILITATOR_URL || DEFAULT_FACILITATOR_URL });
   return defaultFacilitator;
 }
