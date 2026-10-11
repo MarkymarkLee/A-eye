@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
+  PLATFORM_FEE,
   fromBaseUnits,
   type CreateQuestionInput,
   type AusdFlow,
