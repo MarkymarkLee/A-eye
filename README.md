@@ -83,6 +83,49 @@ The MCP server can pay automatically when `AGENT_PRIVATE_KEY` or `A_EYE_AGENT_PR
 
 For testnet wallet funding and balances, run `npx tsx scripts/fund-wallets.mts`. A live x402 integration test is available with `X402_E2E=1` in `apps/web/lib/x402.e2e.test.ts`; it requires funded test wallets and treasury configuration.
 
+## Bounty Credit Vault (XRPL Lending, Devnet)
+
+The `/vault` page demonstrates an XRP credit pool that funds an AI agent's human-observer bounty. The agent borrows from an A-eye loan broker, escrows a bounty pot for the observer, repays the loan with interest, and the depositor redeems vault shares with yield at maturity.
+
+| Role | Vault flow |
+| --- | --- |
+| A-eye broker | Creates the closed-ended vault, sets loan-broker terms, and provides cover. |
+| Sponsor / depositor | Deposits XRP during the subscription phase and withdraws shares at maturity. |
+| AI agent / borrower | Co-signs the loan, funds the bounty escrow, and repays principal plus interest and fees. |
+| Human observer | Receives the escrowed XRP bounty when the escrow is finishable. |
+
+Run the end-to-end Devnet flow with:
+
+```bash
+npm run xrpl:vault
+```
+
+The script funds fresh broker, depositor, borrower, and observer wallets, then saves their seeds to the ignored `.env.xrpl.local` file with mode `0600`. Keep that local file private; it is not part of the snapshot or commit. The script creates the vault, configures the broker and cover, deposits the sponsor's XRP, waits for the subscription period to end, opens a counterparty-signed loan, escrows and releases the observer bounty, repays and deletes the loan, and withdraws the depositor's vault shares after redemption. It records the run at `apps/web/data/xrpl-vault-run.json` and prints a Devnet explorer link for every submitted transaction. Set `XRPL_LENDING_WSS` to override the Devnet WebSocket endpoint.
+
+1. Create a closed-ended XRP vault and configure A-eye's loan broker and cover.
+2. Deposit 40 XRP during subscription and wait for the investment phase.
+3. Counter-sign a 20 XRP loan, escrow 5 XRP for the observer, then release that bounty.
+4. Repay the loan and close it; after redemption, withdraw the depositor's shares and yield.
+
+The flow requires `SingleAssetVault`, `LendingProtocol`, and `LendingProtocolV1_1`; the recipe is Devnet-only because these amendments are not enabled on XRPL Testnet. The vault must be closed-ended: an open vault does not permit the required loan-broker configuration. If the node is unreachable or any required amendment is disabled, the script prints the planned steps as a dry run and exits successfully without creating wallets or writing a snapshot.
+
+The `/vault` page resolves data in this order: live validated-ledger data (four-second timeout), the committed run snapshot if live reads fail, then a simulated plan when the snapshot is invalid or absent. Set `XRPL_VAULT_LIVE=0` to force the recorded snapshot.
+
+Latest committed Devnet run: the depositor withdrew **40,000,070 drops** from a **40,000,000-drop** deposit, for **70 drops of yield**; share price moved from `1` to `1.00000175` drops per share.
+
+| Step | Devnet transaction |
+| --- | --- |
+| Vault create | [F360FFED](https://devnet.xrpl.org/transactions/F360FFEDC9FA77F7C242430523FB858475DA90596AE07252A20A9DF0B9C34B48) |
+| Loan broker set | [D5552253](https://devnet.xrpl.org/transactions/D5552253A1959C888188A86272960EBF1E4FAEC71AE9B45D5B027B6DE06BB775) |
+| Cover deposit | [6567E85E](https://devnet.xrpl.org/transactions/6567E85E510D4E9D6DD2D92936BEC7DCAC61171D1E26423BC65BBB52B3E8196D) |
+| Vault deposit | [BAF7F785](https://devnet.xrpl.org/transactions/BAF7F785371BCDCAC19BC1346F66F8C55473F1BBC378E5507D2F66AB3AA1345F) |
+| Counterparty-signed loan set | [E6E44755](https://devnet.xrpl.org/transactions/E6E447554AB9B11A6641F688A1E165CB473AF0FBF692D48312BCD29CB6445C0D) |
+| Bounty escrow | [ED9B569E](https://devnet.xrpl.org/transactions/ED9B569E917C1AC616D2CD2DB91C12729E980081270AF28128AE41A3702D04AA) |
+| Bounty paid to observer | [1FD63195](https://devnet.xrpl.org/transactions/1FD6319532E77B88891AD2B95FFC9D13091D24CAC7A55A9A17EB5857D49AC97B) |
+| Loan repayment | [C530E8A6](https://devnet.xrpl.org/transactions/C530E8A66AB97B4A3492DB41B2D8E81900CE519C3ED84CE699C44F81F72F36D3) |
+| Loan delete | [EA62181A](https://devnet.xrpl.org/transactions/EA62181A4D48F3205AA5845EF45FC02AFF99F3411969BA1A9D8C19E44BBB0878) |
+| Vault withdraw | [A7D87BF4](https://devnet.xrpl.org/transactions/A7D87BF4BD93E39661BB78D38A29102507AAB45CADBFFCFA4A57AB907C14BBDC) |
+
 ## Demo agent
 
 The demo agent uses the A-eye MCP server for questions and results. Its LLM needs `OPENAI_API_KEY` or `DEEPSEEK_API_KEY`; set `A_EYE_API_URL` to choose the server. Examples:

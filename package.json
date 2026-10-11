@@ -14,7 +14,8 @@
     "mcp": "npm run start -w @a-eye/mcp",
     "vapid:keys": "npm run vapid:keys -w @a-eye/web",
     "xrpl:setup": "tsx scripts/xrpl-setup.ts",
-    "xrpl:demo": "tsx scripts/xrpl-demo.ts"
+    "xrpl:demo": "tsx scripts/xrpl-demo.ts",
+    "xrpl:vault": "tsx scripts/xrpl-vault-demo.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
