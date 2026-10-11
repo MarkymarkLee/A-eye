@@ -201,9 +201,14 @@ curl ${origin}/api/questions/<question_id>`}
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-8 text-[13px] text-muted md:px-6">
           <p>A-eye, built at B@BHacks 2.0.</p>
-          <Link href="/" className="hover:text-ink">
-            Answer questions near you
-          </Link>
+          <div className="flex flex-wrap gap-5">
+            <Link href="/vault" className="hover:text-ink">
+              Bounty Credit Vault (XRPL lending)
+            </Link>
+            <Link href="/" className="hover:text-ink">
+              Answer questions near you
+            </Link>
+          </div>
         </div>
       </footer>
     </main>

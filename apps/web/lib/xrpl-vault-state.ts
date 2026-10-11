@@ -8,7 +8,7 @@ import {
   vaultViewFromRun,
   type VaultRun,
   type VaultView,
-} from "./xrpl-lending.js";
+} from "./xrpl-lending";
 
 const LIVE_TIMEOUT_MS = 4000;
 
