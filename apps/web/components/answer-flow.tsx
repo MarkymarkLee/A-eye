@@ -7,6 +7,8 @@ import { GEO_RULES, PLATFORM_FEE, type QuestionSummary } from "@a-eye/shared";
 import { useLocation } from "@/hooks/use-location";
 import { distanceM, formatDistance } from "@/lib/geo";
 import { timeLeft } from "@/lib/time";
+import { matchSpokenOption, spokenQuestion } from "@/lib/voice-match";
+import { ReadAloudButton, SpeakAnswerButton } from "./voice-controls";
 
 type Question = Omit<QuestionSummary, "distance_m"> & { web_baseline?: { answer: string; source: string }; gallery_url: string };
 type Shot = { blob: Blob; url: string; capturedAt: string };
@@ -19,6 +21,14 @@ export function AnswerFlow({ question: q }: { question: Question }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ distance_m: number } | null>(null);
+  const [heard, setHeard] = useState<{ text: string; index: number | null } | null>(null);
+
+  function onTranscript(text: string) {
+    const index = matchSpokenOption(text, q.options);
+    setHeard({ text, index });
+    if (index !== null) setChoice(index);
+    else if (q.allow_free_text && !freeText.trim()) setFreeText(text.slice(0, 280));
+  }
 
   const fix = loc.status === "ok" ? loc.fix : undefined;
   const distance = fix ? Math.round(distanceM(q.lat, q.lng, fix.lat, fix.lng)) : undefined;
@@ -65,6 +75,9 @@ export function AnswerFlow({ question: q }: { question: Question }) {
       <div className="mt-4 grid gap-8 md:grid-cols-[1fr_1fr] md:gap-12">
         <div className="md:sticky md:top-[84px] md:self-start">
           <h1 className="text-[28px] font-semibold leading-[1.15] tracking-tight md:text-[40px]">{q.prompt}</h1>
+          <div className="mt-3">
+            <ReadAloudButton text={spokenQuestion(q.prompt, q.options)} />
+          </div>
           <dl className="mt-4 grid grid-cols-3 gap-4 border-t border-line pt-4 text-sm">
             <div>
               <dt className="text-muted">Raffle pot</dt>
@@ -97,6 +110,15 @@ export function AnswerFlow({ question: q }: { question: Question }) {
 
           <fieldset>
             <legend className="text-[15px] font-medium">What do you see?</legend>
+            <div className="mt-3">
+              <SpeakAnswerButton onTranscript={onTranscript} />
+              {heard && (
+                <p className="mt-2 text-[13px] leading-snug text-muted" aria-live="polite">
+                  Heard &ldquo;{heard.text}&rdquo;.{" "}
+                  {heard.index !== null ? `Picked ${q.options[heard.index]}.` : "Tap the answer that matches."}
+                </p>
+              )}
+            </div>
             <div className="mt-3 grid gap-2">
               {q.options.map((opt, i) => {
                 const active = choice === i;
