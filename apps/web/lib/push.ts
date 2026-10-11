@@ -31,7 +31,7 @@ export async function notifyWinner(
     const cfg = pushConfig();
     if (!cfg) return { sent: 0, failed: 0 };
     const subscriptions = pushSubscriptionsFor(winner.observer_id).filter((sub) => isAllowedPushEndpoint(sub.endpoint));
-    const amount = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(winner.amount);
+    const amount = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(winner.amount);
     const body = winner.place_label
       ? `You won ${amount} test dollars at ${winner.place_label} — tap to collect`
       : `You won ${amount} test dollars — tap to collect`;

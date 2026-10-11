@@ -55,7 +55,7 @@ function readSeenPrizeIds(): string[] {
 }
 
 function testDollars(amount: number) {
-  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(amount)} test dollars`;
+  return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(amount)} test dollars`;
 }
 
 function shortAddress(address: string) {
