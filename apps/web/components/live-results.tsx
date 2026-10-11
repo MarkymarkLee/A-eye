@@ -156,7 +156,9 @@ function RafflePanel({ r }: { r: QuestionResults }) {
       <p className="mt-1 max-w-[52ch] text-[14px] leading-relaxed text-muted">
         {settled
           ? r.raffle.winner_observer
-            ? `${r.raffle.winner_observer} wins ${r.raffle.prize_amount} ${r.raffle.currency}.`
+            ? r.raffle.xrpl?.payout_tx
+              ? `${r.raffle.winner_observer} wins ${r.raffle.xrpl.amount_xrp} XRP on XRPL.`
+              : `${r.raffle.winner_observer} wins ${r.raffle.prize_amount} ${r.raffle.currency}.`
             : "No winner was drawn."
           : r.status === "expired"
             ? "Too few answers, so there's no draw and the agent gets refunded."
@@ -174,10 +176,11 @@ function RafflePanel({ r }: { r: QuestionResults }) {
         )}
         {settled &&
           (r.raffle.payout_tx ? (
-            <Row label="Payout" value={r.raffle.payout_tx} href={`https://sepolia.basescan.org/tx/${r.raffle.payout_tx}`} />
+            <Row label="AUSD payout" value={r.raffle.payout_tx} href={r.raffle.payout_url} />
           ) : (
-            <Row label="Payout" value={r.raffle.winner_submission_id ? "Pending, the winner has no payout wallet yet or the question was unpaid" : "None"} plain />
+            !r.raffle.xrpl?.payout_tx && <Row label="Payout" value="Pending" plain />
           ))}
+        {r.raffle.xrpl && <XrplRows pot={r.raffle.xrpl} />}
       </dl>
       {settled && r.raffle.winner_submission_id && (
         <div className="mt-4 flex items-center gap-3">
@@ -292,6 +295,25 @@ function VerifySnippet({ r }: { r: QuestionResults }) {
         {r.raffle.winner_observer ? ` (${r.raffle.winner_observer})` : ""}
       </p>
     </details>
+  );
+}
+
+function XrplRows({ pot }: { pot: NonNullable<QuestionResults["raffle"]["xrpl"]> }) {
+  const status =
+    pot.state === "canceled" ? "refunded" : pot.state === "finished" ? "released" : pot.state === "settling" ? "releasing" : "locked";
+  return (
+    <>
+      <div className="grid grid-cols-[96px_1fr] items-center gap-3 pt-1">
+        <dt className="font-sans text-[13px] text-muted">XRPL pot</dt>
+        <dd className="font-sans text-[13px]">
+          {pot.amount_xrp} XRP in escrow, {status}
+        </dd>
+      </div>
+      <Row label="Escrow" value={pot.escrow_tx} href={pot.escrow_url} />
+      {pot.finish_tx && <Row label="Finish" value={pot.finish_tx} href={pot.finish_url} />}
+      {pot.cancel_tx && <Row label="Cancel" value={pot.cancel_tx} href={pot.cancel_url} />}
+      {pot.payout_tx && <Row label="XRP payout" value={pot.payout_tx} href={pot.payout_url} />}
+    </>
   );
 }
 

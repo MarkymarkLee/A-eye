@@ -6,18 +6,33 @@ import { DatabaseSync } from "node:sqlite";
 import {
   PLATFORM_FEE,
   type CreateQuestionInput,
+  type PayoutRail,
   type Evidence,
   type MarketRef,
   type QuestionResults,
   type QuestionStatus,
   type QuestionSummary,
   type WebBaseline,
+  type XrplPotInfo,
 } from "@a-eye/shared";
 import { distanceM } from "./geo";
 import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
 import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
+import { explorerTxUrl } from "./chain";
+import {
+  XrplError,
+  cancelEscrow,
+  createPotEscrow,
+  dropsToXrpString,
+  explorerTx,
+  finishEscrow,
+  isXrplConfigured,
+  issueObserverCredential,
+  payoutXrp,
+  potXrpForUsd,
+} from "./xrpl";
 import { postWebhook } from "./webhook";
 
 /*
@@ -85,7 +100,26 @@ export type Observer = {
   id: string;
   display_name: string;
   evm_address?: string;
+  xrpl_address?: string;
+  payout_rail: PayoutRail;
   created_at: string;
+};
+
+type XrplEscrowRow = {
+  question_id: string;
+  owner: string;
+  offer_sequence: number;
+  amount_drops: string;
+  escrow_tx: string;
+  finish_after: string;
+  cancel_after: string;
+  state: "escrowed" | "settling" | "finished" | "canceled";
+  attempted_at: string | null;
+  finish_tx: string | null;
+  cancel_tx: string | null;
+  payout_tx: string | null;
+  payout_address: string | null;
+  last_error: string | null;
 };
 
 const SCHEMA = `
@@ -93,6 +127,8 @@ create table if not exists observers (
   id text primary key,
   display_name text not null,
   evm_address text,
+  xrpl_address text,
+  payout_rail text not null default 'evm',
   created_at text not null
 );
 create table if not exists questions (
@@ -149,6 +185,30 @@ create table if not exists raffles (
   winner_submission_id text,
   payout_tx text
 );
+create table if not exists xrpl_escrows (
+  question_id text primary key references questions(id),
+  owner text not null,
+  offer_sequence integer not null,
+  amount_drops text not null,
+  escrow_tx text not null,
+  finish_after text not null,
+  cancel_after text not null,
+  state text not null default 'escrowed',
+  attempted_at text,
+  finish_tx text,
+  cancel_tx text,
+  payout_tx text,
+  payout_address text,
+  last_error text
+);
+create table if not exists xrpl_credentials (
+  observer_id text not null references observers(id),
+  subject text not null,
+  state text not null,
+  tx text,
+  updated_at text not null,
+  primary key (observer_id, subject)
+);
 create table if not exists push_subscriptions (
   endpoint text primary key,
   observer_id text not null references observers(id),
@@ -172,6 +232,9 @@ function migrate(conn: DatabaseSync) {
     if (!cols.has(col)) conn.exec(`alter table questions add column ${col} text`);
   }
   if (!cols.has("closed_at")) conn.exec("alter table questions add column closed_at text");
+  const obsCols = new Set((conn.prepare("pragma table_info(observers)").all() as { name: string }[]).map((c) => c.name));
+  if (!obsCols.has("xrpl_address")) conn.exec("alter table observers add column xrpl_address text");
+  if (!obsCols.has("payout_rail")) conn.exec("alter table observers add column payout_rail text not null default 'evm'");
 }
 
 export function db(): DatabaseSync {
@@ -198,6 +261,8 @@ function toObserver(row: Record<string, unknown>): Observer {
     id: row.id as string,
     display_name: row.display_name as string,
     evm_address: (row.evm_address as string | null) ?? undefined,
+    xrpl_address: (row.xrpl_address as string | null) ?? undefined,
+    payout_rail: row.payout_rail === "xrpl" ? "xrpl" : "evm",
     created_at: row.created_at as string,
   };
 }
@@ -210,6 +275,7 @@ export function getOrCreateObserver(id: string | undefined): Observer {
   const obs: Observer = {
     id: id ?? randomUUID(),
     display_name: `observer-${shortId().slice(0, 4)}`,
+    payout_rail: "evm",
     created_at: new Date().toISOString(),
   };
   db()
@@ -218,15 +284,20 @@ export function getOrCreateObserver(id: string | undefined): Observer {
   return obs;
 }
 
-export function updateObserver(id: string, patch: { display_name?: string; evm_address?: string | null }) {
+export function updateObserver(
+  id: string,
+  patch: { display_name?: string; evm_address?: string | null; xrpl_address?: string | null; payout_rail?: PayoutRail },
+) {
   const obs = getOrCreateObserver(id);
   const next = {
     display_name: patch.display_name ?? obs.display_name,
     evm_address: patch.evm_address === undefined ? obs.evm_address ?? null : patch.evm_address,
+    xrpl_address: patch.xrpl_address === undefined ? obs.xrpl_address ?? null : patch.xrpl_address,
+    payout_rail: patch.payout_rail ?? obs.payout_rail,
   };
   db()
-    .prepare("update observers set display_name = ?, evm_address = ? where id = ?")
-    .run(next.display_name, next.evm_address, id);
+    .prepare("update observers set display_name = ?, evm_address = ?, xrpl_address = ?, payout_rail = ? where id = ?")
+    .run(next.display_name, next.evm_address, next.xrpl_address, next.payout_rail, id);
   return getOrCreateObserver(id);
 }
 
@@ -234,25 +305,31 @@ export function observerEntries(observerId: string) {
   const rows = db()
     .prepare(
       `select s.id as submission_id, s.option_index, s.captured_at, q.id as question_id, q.prompt, q.options,
-              q.status, q.prize_amount, q.currency, r.winner_submission_id
+              q.status, q.prize_amount, q.currency, r.winner_submission_id, x.payout_tx as xrpl_payout_tx,
+              x.amount_drops as xrpl_drops
          from submissions s
          join questions q on q.id = s.question_id
     left join raffles r on r.question_id = q.id
+    left join xrpl_escrows x on x.question_id = q.id
         where s.observer_id = ?
      order by s.captured_at desc`,
     )
     .all(observerId) as Record<string, unknown>[];
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const won = r.winner_submission_id === r.submission_id;
+    const paidXrp = won && Boolean(r.xrpl_payout_tx);
+    return {
     submission_id: r.submission_id as string,
     question_id: r.question_id as string,
     prompt: r.prompt as string,
     answer: (JSON.parse(r.options as string) as string[])[r.option_index as number]!,
     captured_at: r.captured_at as string,
     status: r.status as QuestionStatus,
-    won: r.winner_submission_id === r.submission_id,
-    prize: payoutAmount(r.prize_amount as number),
-    currency: r.currency as string,
-  }));
+    won,
+    prize: paidXrp ? Number(dropsToXrpString(r.xrpl_drops as string)) : payoutAmount(r.prize_amount as number),
+    currency: paidXrp ? "XRP" : (r.currency as string),
+    };
+  });
 }
 
 // ---------- questions ----------
@@ -424,6 +501,8 @@ async function buildResults(id: string, origin: string): Promise<QuestionResults
       prize_amount: payoutAmount(q.prize_amount),
       currency: q.currency,
       payout_tx: raffle?.payout_tx ?? undefined,
+      payout_url: raffle?.payout_tx ? explorerTxUrl(raffle.payout_tx) : undefined,
+      xrpl: xrplPotInfo(id),
     },
   };
 }
@@ -489,6 +568,9 @@ export async function addSubmission(input: {
     if (String(err).includes("UNIQUE")) return { ok: false, status: 409, reason: "That answer was already recorded." };
     throw err;
   }
+  void maybeIssueObserverCredential(input.observer_id).catch((err) =>
+    console.error("[xrpl] credential check failed:", err instanceof Error ? err.message : err),
+  );
   let closed = false;
   if (responseCount(q.id) >= q.max_responses) {
     await settle(q.id);
@@ -580,6 +662,7 @@ export async function settleDue(): Promise<number> {
   for (const { id } of due) {
     if (await settle(id)) settled += 1;
   }
+  retryXrplPots();
   return settled;
 }
 
@@ -605,6 +688,7 @@ async function settle(id: string) {
       const refund = await sendFromTreasury("refund", q.payer_address, prizeUnits(q.prize_amount));
       if (refund) db().prepare("update questions set refund_tx = ? where id = ?").run(refund, id);
     }
+    await settleXrplPot(id);
     trackWebhook(id);
     return true;
   }
@@ -618,7 +702,11 @@ async function settle(id: string) {
     )
     .run(id, q.seed, entropy, block?.number ?? null, draw?.winner ?? null);
   db().prepare("update questions set status = 'settled' where id = ?").run(id);
-  if (q.payment_tx && draw?.winner) await payWinner(id, draw.winner, q.prize_amount);
+  const xrplWinner = draw?.winner ? xrplPayoutAddress(draw.winner) : undefined;
+  const escrowed = Boolean(escrowRow(id));
+  // An XRPL-rail winner of an escrowed pot is paid from the escrow instead of in AUSD.
+  if (q.payment_tx && draw?.winner && !(escrowed && xrplWinner)) await payWinner(id, draw.winner, q.prize_amount);
+  await settleXrplPot(id);
   trackWebhook(id);
   return true;
 }
@@ -681,6 +769,219 @@ async function payWinner(questionId: string, winnerSubmissionId: string, prizeUs
   }
   const tx = await sendFromTreasury("payout", winner.evm_address, winnerPayoutUnits(prizeUsd));
   if (tx) db().prepare("update raffles set payout_tx = ? where question_id = ?").run(tx, questionId);
+}
+
+// ---------- XRPL testnet: pot escrows and observer credentials ----------
+
+const XRPL_FINISH_DELAY_MS = 10_000;
+const XRPL_CANCEL_GRACE_MS = 2 * 60_000;
+const XRPL_LEDGER_SLACK_MS = 5_000;
+const XRPL_RETRY_MS = 30_000;
+const XRPL_STALE_CLAIM_MS = 5 * 60_000;
+export const CREDENTIAL_THRESHOLD = 3;
+
+const escrowRow = (questionId: string) =>
+  db().prepare("select * from xrpl_escrows where question_id = ?").get(questionId) as XrplEscrowRow | undefined;
+
+const xrplError = (err: unknown) =>
+  err instanceof XrplError ? err.code : err instanceof Error ? err.message.slice(0, 120) : "xrpl_failed";
+
+function xrplPayoutAddress(winnerSubmissionId: string): string | undefined {
+  const row = db()
+    .prepare("select o.payout_rail, o.xrpl_address from submissions s join observers o on o.id = s.observer_id where s.id = ?")
+    .get(winnerSubmissionId) as { payout_rail: string | null; xrpl_address: string | null } | undefined;
+  return row?.payout_rail === "xrpl" && row.xrpl_address ? row.xrpl_address : undefined;
+}
+
+/**
+ * Lock the question's pot (the winner payout, in testnet XRP) in an EscrowCreate owned by the
+ * XRPL treasury. FinishAfter is a few seconds out so early closes can release it; CancelAfter is
+ * just past closes_at so an expired question's pot can be refunded. Never throws.
+ */
+export async function escrowQuestionPot(questionId: string): Promise<string | null> {
+  if (!isXrplConfigured()) return null;
+  const q = questionById(questionId);
+  if (!q || q.status !== "open") return null;
+  const existing = escrowRow(questionId);
+  if (existing) return existing.escrow_tx;
+  const finishAfter = new Date(Date.now() + XRPL_FINISH_DELAY_MS);
+  const cancelAfter = new Date(Math.max(Date.parse(q.closes_at), finishAfter.getTime()) + XRPL_CANCEL_GRACE_MS);
+  try {
+    const escrow = await createPotEscrow(potXrpForUsd(payoutAmount(q.prize_amount)), finishAfter, { cancelAfter });
+    db()
+      .prepare(
+        `insert into xrpl_escrows (question_id, owner, offer_sequence, amount_drops, escrow_tx, finish_after, cancel_after)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        questionId,
+        escrow.owner,
+        escrow.offer_sequence,
+        escrow.amount_drops,
+        escrow.hash,
+        finishAfter.toISOString(),
+        cancelAfter.toISOString(),
+      );
+    console.info(`[xrpl] pot escrow for ${questionId}: ${escrow.explorer_url}`);
+    return escrow.hash;
+  } catch (err) {
+    console.error(`[xrpl] pot escrow for ${questionId} failed: ${xrplError(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Release a closed question's escrow: EscrowCancel (refund to the treasury) when it expired,
+ * otherwise EscrowFinish and, if the winner chose the XRPL rail, an XRP payment to them.
+ * Each step is persisted, so a failed or early attempt is retried by a later settleDue().
+ */
+export async function settleXrplPot(questionId: string): Promise<void> {
+  if (!isXrplConfigured()) return;
+  const row = escrowRow(questionId);
+  const q = questionById(questionId);
+  if (!row || !q || row.state === "finished" || row.state === "canceled") return;
+  if (q.status !== "settled" && q.status !== "expired") return;
+  const now = Date.now();
+  const cancelable = now >= Date.parse(row.cancel_after) + XRPL_LEDGER_SLACK_MS;
+  if (q.status === "expired" && !cancelable) return;
+  if (q.status === "settled" && now < Date.parse(row.finish_after) + XRPL_LEDGER_SLACK_MS) return;
+  const claim = db()
+    .prepare(
+      `update xrpl_escrows set state = 'settling', attempted_at = ?
+        where question_id = ?
+          and ((state = 'escrowed' and (attempted_at is null or attempted_at < ?)) or (state = 'settling' and attempted_at < ?))`,
+    )
+    .run(
+      new Date(now).toISOString(),
+      questionId,
+      new Date(now - XRPL_RETRY_MS).toISOString(),
+      new Date(now - XRPL_STALE_CLAIM_MS).toISOString(),
+    );
+  if (claim.changes !== 1) return;
+
+  const set = (col: "finish_tx" | "cancel_tx" | "payout_tx" | "payout_address", value: string) =>
+    db().prepare(`update xrpl_escrows set ${col} = ? where question_id = ?`).run(value, questionId);
+  try {
+    if (q.status === "expired") {
+      if (!row.cancel_tx) set("cancel_tx", (await cancelEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).hash);
+      db().prepare("update xrpl_escrows set state = 'canceled', last_error = null where question_id = ?").run(questionId);
+      return;
+    }
+    const raffle = db().prepare("select winner_submission_id from raffles where question_id = ?").get(questionId) as
+      | { winner_submission_id: string | null }
+      | undefined;
+    const payTo = raffle?.winner_submission_id ? xrplPayoutAddress(raffle.winner_submission_id) : undefined;
+    if (!row.finish_tx && !row.cancel_tx) {
+      // Past CancelAfter the escrow can no longer be finished; cancel it back to the treasury instead.
+      if (cancelable) set("cancel_tx", (await cancelEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).hash);
+      else set("finish_tx", (await finishEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).finish.hash);
+    }
+    if (payTo && !row.payout_tx) {
+      set("payout_address", payTo);
+      set("payout_tx", (await payoutXrp(payTo, row.amount_drops)).hash);
+    }
+    db().prepare("update xrpl_escrows set state = 'finished', last_error = null where question_id = ?").run(questionId);
+  } catch (err) {
+    const code = xrplError(err);
+    console.error(`[xrpl] settling pot for ${questionId} failed: ${code}`);
+    db().prepare("update xrpl_escrows set state = 'escrowed', last_error = ? where question_id = ?").run(code, questionId);
+  }
+}
+
+/** Background retry for pots whose release was too early or failed; never blocks the caller. */
+function retryXrplPots() {
+  if (!isXrplConfigured()) return;
+  const pending = db()
+    .prepare(
+      `select e.question_id from xrpl_escrows e join questions q on q.id = e.question_id
+        where e.state in ('escrowed', 'settling') and q.status in ('settled', 'expired')`,
+    )
+    .all() as { question_id: string }[];
+  for (const { question_id } of pending) {
+    void settleXrplPot(question_id).catch((err) => console.error(`[xrpl] retry ${question_id}: ${xrplError(err)}`));
+  }
+}
+
+function xrplPotInfo(questionId: string): XrplPotInfo | undefined {
+  const row = escrowRow(questionId);
+  if (!row) return undefined;
+  const tx = (hash: string | null) => (hash ? { hash, url: explorerTx(hash) } : undefined);
+  const finish = tx(row.finish_tx);
+  const cancel = tx(row.cancel_tx);
+  const payout = tx(row.payout_tx);
+  return {
+    state: row.state,
+    amount_xrp: dropsToXrpString(row.amount_drops),
+    owner: row.owner,
+    offer_sequence: row.offer_sequence,
+    escrow_tx: row.escrow_tx,
+    escrow_url: explorerTx(row.escrow_tx),
+    finish_tx: finish?.hash,
+    finish_url: finish?.url,
+    cancel_tx: cancel?.hash,
+    cancel_url: cancel?.url,
+    payout_tx: payout?.hash,
+    payout_url: payout?.url,
+  };
+}
+
+const acceptedSubmissions = (observerId: string) =>
+  (db().prepare("select count(*) as n from submissions where observer_id = ?").get(observerId) as { n: number }).n;
+
+export type ObserverCredential = {
+  enabled: boolean;
+  accepted: number;
+  threshold: number;
+  credential?: { subject: string; state: "pending" | "issued" | "failed"; tx?: string; url?: string };
+};
+
+export function observerCredential(observerId: string): ObserverCredential {
+  const obs = getOrCreateObserver(observerId);
+  const row = obs.xrpl_address
+    ? (db()
+        .prepare("select subject, state, tx from xrpl_credentials where observer_id = ? and subject = ?")
+        .get(observerId, obs.xrpl_address) as { subject: string; state: "pending" | "issued" | "failed"; tx: string | null } | undefined)
+    : undefined;
+  return {
+    enabled: isXrplConfigured(),
+    accepted: acceptedSubmissions(observerId),
+    threshold: CREDENTIAL_THRESHOLD,
+    credential: row
+      ? { subject: row.subject, state: row.state, tx: row.tx ?? undefined, url: row.tx ? explorerTx(row.tx) : undefined }
+      : undefined,
+  };
+}
+
+/** CredentialCreate "A-eye Verified Observer" once an observer with an XRPL address has 3 accepted answers. */
+export async function maybeIssueObserverCredential(observerId: string): Promise<void> {
+  if (!isXrplConfigured()) return;
+  const obs = getOrCreateObserver(observerId);
+  const subject = obs.xrpl_address;
+  if (!subject || acceptedSubmissions(observerId) < CREDENTIAL_THRESHOLD) return;
+  const now = new Date();
+  const claimed =
+    db()
+      .prepare("insert or ignore into xrpl_credentials (observer_id, subject, state, updated_at) values (?, ?, 'pending', ?)")
+      .run(observerId, subject, now.toISOString()).changes === 1 ||
+    db()
+      .prepare(
+        `update xrpl_credentials set state = 'pending', updated_at = ?
+          where observer_id = ? and subject = ? and state = 'failed' and updated_at < ?`,
+      )
+      .run(now.toISOString(), observerId, subject, new Date(now.getTime() - XRPL_RETRY_MS).toISOString()).changes === 1;
+  if (!claimed) return;
+  try {
+    const issued = await issueObserverCredential(subject);
+    db()
+      .prepare("update xrpl_credentials set state = 'issued', tx = ?, updated_at = ? where observer_id = ? and subject = ?")
+      .run(issued.hash, new Date().toISOString(), observerId, subject);
+    if (issued.explorer_url) console.info(`[xrpl] credential for ${subject}: ${issued.explorer_url}`);
+  } catch (err) {
+    console.error(`[xrpl] credential for ${subject} failed: ${xrplError(err)}`);
+    db()
+      .prepare("update xrpl_credentials set state = 'failed', updated_at = ? where observer_id = ? and subject = ?")
+      .run(new Date().toISOString(), observerId, subject);
+  }
 }
 
 // ---------- seed data (mock demo questions around the UC Berkeley campus) ----------
