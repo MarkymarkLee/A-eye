@@ -1,5 +1,8 @@
 import { promises as dns } from "node:dns";
-import { isIP } from "node:net";
+import type { LookupOptions } from "node:dns";
+import { isIP, type LookupFunction } from "node:net";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 
 type LookupAddress = { address: string; family: number };
 type LookupAll = (hostname: string, options: { all: true }) => Promise<LookupAddress[]>;
@@ -23,6 +26,9 @@ function isPublicIpv4(ip: string): boolean {
     (a === 192 && b === 168) ||
     (a === 192 && b === 0 && c === 0) ||
     (a === 198 && (b === 18 || b === 19)) ||
+    (a === 192 && b === 0 && c === 2) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
     a! >= 224
   );
 }
@@ -61,6 +67,33 @@ export function isPublicAddress(ip: string): boolean {
   if ((words[0]! & 0xfe00) === 0xfc00) return false;
   if ((words[0]! & 0xffc0) === 0xfe80) return false;
   if ((words[0]! & 0xff00) === 0xff00) return false;
+  if (words.slice(0, 6).every((word) => word === 0)) {
+    const embeddedIpv4 = [
+      words[6]! >> 8,
+      words[6]! & 0xff,
+      words[7]! >> 8,
+      words[7]! & 0xff,
+    ].join(".");
+    return isPublicIpv4(embeddedIpv4);
+  }
+  if (words[0] === 0x0064 && words[1] === 0xff9b && words.slice(2, 6).every((word) => word === 0)) {
+    const embeddedIpv4 = [
+      words[6]! >> 8,
+      words[6]! & 0xff,
+      words[7]! >> 8,
+      words[7]! & 0xff,
+    ].join(".");
+    return isPublicIpv4(embeddedIpv4);
+  }
+  if (words[0] === 0x2002) {
+    const embeddedIpv4 = [
+      words[1]! >> 8,
+      words[1]! & 0xff,
+      words[2]! >> 8,
+      words[2]! & 0xff,
+    ].join(".");
+    return isPublicIpv4(embeddedIpv4);
+  }
   if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff) {
     const embeddedIpv4 = [
       words[6]! >> 8,
@@ -71,6 +104,31 @@ export function isPublicAddress(ip: string): boolean {
     return isPublicIpv4(embeddedIpv4);
   }
   return true;
+}
+
+export function publicOnlyLookup(lookupAll: LookupAll = (host, options) => dns.lookup(host, options)): LookupFunction {
+  return (hostname: string, options: LookupOptions, callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | LookupAddress[],
+    family?: number,
+  ) => void) => {
+    void lookupAll(hostname, { all: true }).then(
+      (addresses) => {
+        if (addresses.length === 0 || addresses.some(({ address }) => !isPublicAddress(address))) {
+          const error = Object.assign(new Error("URL hostname does not resolve only to public addresses"), { code: "EAI_FAIL" });
+          callback(error, "");
+          return;
+        }
+        if (options.all) {
+          callback(null, addresses);
+          return;
+        }
+        const first = addresses[0]!;
+        callback(null, first.address, first.family);
+      },
+      (err: unknown) => callback(err instanceof Error ? err : new Error(String(err)), ""),
+    );
+  };
 }
 
 export async function assertPublicUrl(url: string, lookup: LookupAll = (host, options) => dns.lookup(host, options)) {
@@ -108,7 +166,7 @@ export async function postWebhook(
     lookup?: LookupAll;
   } = {},
 ): Promise<{ ok: boolean; status?: number; error?: string; attempts: number }> {
-  const { timeoutMs = 5000, retries = 1, retryDelayMs = 1000, fetchImpl = fetch, lookup } = opts;
+  const { timeoutMs = 5000, retries = 1, retryDelayMs = 1000, fetchImpl, lookup } = opts;
   try {
     await assertPublicUrl(url, lookup);
   } catch (err) {
@@ -120,24 +178,62 @@ export async function postWebhook(
   let error: string | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const response = await fetchImpl(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "user-agent": "A-eye-webhook/1",
-          "x-a-eye-event": "question.closed",
-        },
-        body: JSON.stringify(payload),
-        redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      status = response.status;
-      if (response.status >= 200 && response.status < 300) return { ok: true, status, attempts: attempt };
-      error = `HTTP ${response.status}`;
+      if (fetchImpl) {
+        const response = await fetchImpl(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "user-agent": "A-eye-webhook/1",
+            "x-a-eye-event": "question.closed",
+          },
+          body: JSON.stringify(payload),
+          redirect: "manual",
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        status = response.status;
+      } else {
+        status = await postWithNodeHttp(url, payload, timeoutMs, publicOnlyLookup(lookup));
+      }
+      if (status >= 200 && status < 300) return { ok: true, status, attempts: attempt };
+      error = `HTTP ${status}`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
     if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
   return { ok: false, status, error, attempts: maxAttempts };
+}
+
+function postWithNodeHttp(url: string, payload: unknown, timeoutMs: number, lookup: LookupFunction): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const request = (parsed.protocol === "https:" ? httpsRequest : httpRequest)({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || undefined,
+      path: `${parsed.pathname}${parsed.search}`,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "A-eye-webhook/1",
+        "x-a-eye-event": "question.closed",
+      },
+      lookup,
+    });
+    const timer = setTimeout(() => request.destroy(new Error("Webhook request timed out")), timeoutMs);
+    timer.unref();
+    request.on("response", (response) => {
+      const status = response.statusCode ?? 0;
+      response.on("end", () => {
+        clearTimeout(timer);
+        resolve(status);
+      });
+      response.resume();
+    });
+    request.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    request.end(JSON.stringify(payload));
+  });
 }

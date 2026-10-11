@@ -57,12 +57,32 @@ describe("a-eye MCP server", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "ask_location_question",
       "check_coverage",
+      "compare_market",
       "get_question_results",
       "list_my_questions",
       "peek_results",
       "wait_for_results",
     ]);
     expect(tools.find((tool) => tool.name === "ask_location_question")?.inputSchema.properties).toHaveProperty("webhook_url");
+  });
+
+  it("returns the live market comparison for a question", async () => {
+    const comparison = {
+      question_id: "q1",
+      prompt: "Will BTC close up?",
+      market_ref: { provider: "gemini", env: "sandbox" },
+      market_pct: 62,
+      crowd_pct: 80,
+      edge_pts: 18,
+      trades: [],
+    };
+    const client = await connect(async (url) => {
+      expect(url).toBe(`${BASE}/api/questions/q1/market`);
+      return Response.json(comparison);
+    });
+    const result = await client.callTool({ name: "compare_market", arguments: { question_id: "q1" } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toMatchObject(comparison);
   });
 
   it("posts a validated question with defaults applied", async () => {

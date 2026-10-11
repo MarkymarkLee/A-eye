@@ -4,6 +4,25 @@ export const PUSH_RADIUS_M = 1500;
 export const PUSH_MIN_INTERVAL_MS = 3 * 60_000;
 export const PUSH_MAX_LOCATION_AGE_MS = 7 * 24 * 3600_000;
 
+const PUSH_HOSTS = [
+  "fcm.googleapis.com",
+  "android.googleapis.com",
+  "push.services.mozilla.com",
+  "notify.windows.com",
+  "push.apple.com",
+];
+
+export function isAllowedPushEndpoint(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || (parsed.port && parsed.port !== "443")) return false;
+    const host = parsed.hostname.toLowerCase();
+    return PUSH_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Which subscriptions should hear about a new question at `q`: close enough,
  * with a fresh enough location, and not notified too recently. Pure — the SQL

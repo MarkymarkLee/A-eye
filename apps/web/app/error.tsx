@@ -8,10 +8,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     console.error(error);
@@ -25,7 +25,7 @@ export default function Error({
         body="A-eye hit a snag loading this page. Try again in a moment."
         action={
           <div className="flex flex-wrap justify-center gap-2">
-            <Button onClick={reset}>Try again</Button>
+            <Button onClick={() => retry()}>Try again</Button>
             <Button asChild variant="ghost">
               <Link href="/">Back to A-eye</Link>
             </Button>

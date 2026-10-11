@@ -1,7 +1,7 @@
 import "server-only";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   PLATFORM_FEE,
@@ -10,9 +10,11 @@ import {
   type PayoutRail,
   type Evidence,
   type MarketRef,
+  type MarketTrade,
   type QuestionResults,
   type QuestionStatus,
   type QuestionSummary,
+  type RecordMarketTradeInput,
   type WebBaseline,
   type XrplPotInfo,
 } from "@a-eye/shared";
@@ -140,6 +142,10 @@ type XrplEscrowRow = {
 };
 
 const SCHEMA = `
+create table if not exists meta (
+  key text primary key,
+  value text not null
+);
 create table if not exists observers (
   id text primary key,
   display_name text not null,
@@ -176,6 +182,30 @@ create table if not exists questions (
   webhook_origin text,
   webhook_state text
 );
+create table if not exists market_trades (
+  id text primary key,
+  question_id text not null references questions(id),
+  provider text not null,
+  env text not null,
+  symbol text not null,
+  side text not null,
+  outcome text not null,
+  quantity text not null,
+  price real not null,
+  status text not null,
+  order_id text,
+  filled_quantity text not null,
+  avg_price real,
+  market_pct real,
+  crowd_pct real,
+  edge_pts real,
+  dry_run integer not null,
+  reason text,
+  created_at text not null,
+  updated_at text not null,
+  unique (question_id, order_id)
+);
+create index if not exists market_trades_question_idx on market_trades(question_id, created_at);
 create index if not exists questions_status_idx on questions(status, closes_at);
 create index if not exists questions_geo_idx on questions(lat, lng);
 create table if not exists submissions (
@@ -254,8 +284,13 @@ const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 
 export function applyPendingRestore(file: string): boolean {
   if (file === ":memory:" || !existsSync(`${file}.restore`)) return false;
-  if (existsSync(file)) renameSync(file, `${file}.pre-restore-${Date.now()}`);
-  rmSync(`${file}-wal`, { force: true });
+  const previous = `${file}.pre-restore-${Date.now()}`;
+  if (existsSync(file)) {
+    renameSync(file, previous);
+    if (existsSync(`${file}-wal`)) renameSync(`${file}-wal`, `${previous}-wal`);
+  } else {
+    rmSync(`${file}-wal`, { force: true });
+  }
   rmSync(`${file}-shm`, { force: true });
   renameSync(`${file}.restore`, file);
   console.info("[db] restored database from", `${file}.restore`);
@@ -333,6 +368,38 @@ export function getOrCreateObserver(id: string | undefined): Observer {
     .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
     .run(obs.id, obs.display_name, obs.created_at);
   return obs;
+}
+
+export function getObserver(id: string): Observer | undefined {
+  const row = db().prepare("select * from observers where id = ?").get(id);
+  return row ? toObserver(row as Record<string, unknown>) : undefined;
+}
+
+export function createObserver(): Observer {
+  const obs: Observer = {
+    id: randomUUID(),
+    display_name: `observer-${shortId().slice(0, 4)}`,
+    payout_rail: "evm",
+    created_at: new Date().toISOString(),
+  };
+  db()
+    .prepare("insert into observers (id, display_name, created_at) values (?, ?, ?)")
+    .run(obs.id, obs.display_name, obs.created_at);
+  return obs;
+}
+
+let cachedCookieSecret: string | undefined;
+
+export function cookieSecret(): string {
+  if (process.env.A_EYE_COOKIE_SECRET && process.env.A_EYE_COOKIE_SECRET.length >= 32) {
+    return process.env.A_EYE_COOKIE_SECRET;
+  }
+  if (cachedCookieSecret) return cachedCookieSecret;
+  const generated = randomBytes(32).toString("hex");
+  db().prepare("insert or ignore into meta (key, value) values ('observer_cookie_secret', ?)").run(generated);
+  const row = db().prepare("select value from meta where key = 'observer_cookie_secret'").get() as { value: string };
+  cachedCookieSecret = row.value;
+  return cachedCookieSecret;
 }
 
 export function updateObserver(
@@ -446,6 +513,12 @@ export function setQuestionEnrichment(
 const questionById = (id: string) =>
   db().prepare("select * from questions where id = ?").get(id) as QuestionRow | undefined;
 
+export function getQuestionMarketRef(id: string): MarketRef | null | undefined {
+  const question = questionById(id);
+  if (!question) return undefined;
+  return question.market_ref ? (JSON.parse(question.market_ref) as MarketRef) : null;
+}
+
 const submissionsFor = (questionId: string) =>
   db()
     .prepare("select * from submissions where question_id = ? order by captured_at asc")
@@ -453,6 +526,98 @@ const submissionsFor = (questionId: string) =>
 
 const responseCount = (questionId: string) =>
   (db().prepare("select count(*) as n from submissions where question_id = ?").get(questionId) as { n: number }).n;
+
+type MarketTradeRow = Omit<MarketTrade, "dry_run"> & { dry_run: number };
+
+export function marketTrades(questionId: string): MarketTrade[] {
+  const rows = db()
+    .prepare("select * from market_trades where question_id = ? order by created_at asc")
+    .all(questionId) as MarketTradeRow[];
+  return rows.map((row) => ({ ...row, dry_run: row.dry_run === 1 }));
+}
+
+export function resultsAreSealed(status: QuestionStatus) {
+  return status === "open" && peekPaywallActive();
+}
+
+function sealMarketTrades(trades?: MarketTrade[]) {
+  return trades?.map((trade) => ({ ...trade, crowd_pct: null, edge_pts: null, reason: null }));
+}
+
+export function marketTradesForQuestion(questionId: string, status: QuestionStatus) {
+  const trades = marketTrades(questionId);
+  return resultsAreSealed(status) ? (sealMarketTrades(trades) ?? []) : trades;
+}
+
+export function recordMarketTrade(questionId: string, input: RecordMarketTradeInput): MarketTrade {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db()
+    .prepare(
+      `insert into market_trades (
+        id, question_id, provider, env, symbol, side, outcome, quantity, price, status,
+        order_id, filled_quantity, avg_price, market_pct, crowd_pct, edge_pts, dry_run,
+        reason, created_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(question_id, order_id) do update set
+        provider = excluded.provider, env = excluded.env, symbol = excluded.symbol,
+        side = excluded.side, outcome = excluded.outcome, quantity = excluded.quantity,
+        price = excluded.price, status = excluded.status, filled_quantity = excluded.filled_quantity,
+        avg_price = excluded.avg_price, market_pct = excluded.market_pct,
+        crowd_pct = excluded.crowd_pct, edge_pts = excluded.edge_pts, dry_run = excluded.dry_run,
+        reason = excluded.reason, updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      questionId,
+      input.provider,
+      input.env,
+      input.symbol,
+      input.side,
+      input.outcome,
+      input.quantity,
+      input.price,
+      input.status,
+      input.order_id,
+      input.filled_quantity,
+      input.avg_price,
+      input.market_pct,
+      input.crowd_pct,
+      input.edge_pts,
+      input.dry_run ? 1 : 0,
+      input.reason,
+      now,
+      now,
+    );
+  const row = db()
+    .prepare("select * from market_trades where question_id = ? and order_id is ? order by created_at desc limit 1")
+    .get(questionId, input.order_id) as MarketTradeRow;
+  return { ...row, dry_run: row.dry_run === 1 };
+}
+
+export async function getMarketQuestion(id: string) {
+  await settleDue();
+  const q = questionById(id);
+  if (!q) return undefined;
+  const options = JSON.parse(q.options) as string[];
+  const subs = submissionsFor(id);
+  return {
+    question: summarize(q),
+    options,
+    tally: tally(options, subs.map((s) => s.option_index)),
+    market_trades: marketTradesForQuestion(id, q.status),
+    sealed: resultsAreSealed(q.status),
+  };
+}
+
+export async function latestMarketQuestionIds(limit: number): Promise<string[]> {
+  await settleDue();
+  return (
+    db()
+      .prepare("select id from questions where market_ref is not null order by created_at desc limit ?")
+      .all(limit) as { id: string }[]
+  ).map((row) => row.id);
+}
 
 function summarize(q: QuestionRow, from?: { lat: number; lng: number }): QuestionSummary {
   return {
@@ -616,6 +781,7 @@ export async function buildResults(id: string, origin: string): Promise<Question
       payout_url: raffle?.payout_tx ? explorerTxUrl(raffle.payout_tx) : undefined,
       xrpl: xrplPotInfo(id),
     },
+    market_trades: marketTrades(id),
   };
 }
 
@@ -647,12 +813,13 @@ export function recordPeek(questionId: string, payer: string, amountUsd: number,
 }
 
 export function sealResults(results: QuestionResults): QuestionResults {
-  if (results.status !== "open" || !peekPaywallActive()) return results;
+  if (!resultsAreSealed(results.status)) return results;
   const origin = new URL(results.gallery_url).origin;
   return {
     ...results,
     tally: results.tally.map((row) => ({ ...row, count: 0, pct: 0 })),
     evidence: [],
+    market_trades: sealMarketTrades(results.market_trades),
     sealed: true,
     peek: { price_usd: Number(peekPriceUnits()) / 10 ** 6, url: `${origin}/api/questions/${results.id}/peek` },
   };

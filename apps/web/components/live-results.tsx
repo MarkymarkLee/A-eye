@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, Bot, Camera, Check, CircleCheck, CircleX, Copy, Eye, Globe, ImageIcon, Lock, MapPin, Receipt, ShieldCheck, Trophy, Users } from "lucide-react";
-import type { AusdFlow, Evidence, QuestionResults } from "@a-eye/shared";
-import { marketVsHumans, webVsHumans } from "@/lib/compare";
+import type { AusdFlow, Evidence, MarketComparison, QuestionResults } from "@a-eye/shared";
+import { yesOptionIndex, webVsHumans } from "@/lib/compare";
 import { formatDistance } from "@/lib/geo";
 import { raffleSnippet } from "@/lib/raffle-snippet";
 import { ago, clockTime } from "@/lib/time";
@@ -20,6 +20,7 @@ import { Countdown } from "./ui/countdown";
 import { Disclosure } from "./ui/disclosure";
 import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
+import { MarketVsHumans } from "./market-vs-humans";
 
 export function LiveResults({ initial, dev }: { initial: QuestionResults; dev: boolean }) {
   const [r, setR] = useState(initial);
@@ -444,8 +445,28 @@ function MoneyTrail({ flows }: { flows: AusdFlow[] }) {
 
 function Comparison({ r }: { r: QuestionResults }) {
   const web = webVsHumans(r.web_baseline as Parameters<typeof webVsHumans>[0], r.tally);
-  const market = marketVsHumans(r.market_ref, r.options, r.tally);
-  if (!web && !market) return null;
+  const marketIndex = yesOptionIndex(r.options, r.market_ref);
+  const marketRef = r.market_ref;
+  const marketPct =
+    typeof marketRef?.implied_yes === "number" ? Math.round(marketRef.implied_yes * 100) : null;
+  const crowdPct = !r.sealed && r.responses > 0 ? r.tally[marketIndex]?.pct ?? 0 : null;
+  const comparison: MarketComparison | undefined = marketRef
+    ? {
+        question_id: r.id,
+        prompt: r.prompt,
+        status: r.status,
+        market_ref: marketRef,
+        yes_option: r.options[marketIndex] ?? r.options[0] ?? "",
+        live: null,
+        market_pct: marketPct,
+        asked_market_pct: marketPct,
+        crowd_pct: crowdPct,
+        responses: r.responses,
+        edge_pts: crowdPct === null || marketPct === null ? null : crowdPct - marketPct,
+        trades: r.market_trades ?? [],
+      }
+    : undefined;
+  if (!web && !comparison) return null;
   const humans = web?.humans ? `${web.humans.option} (${web.humans.pct}%)` : "Waiting for answers";
   return (
     <section aria-label="The internet and the market versus people there" className="mt-3 grid gap-3">
@@ -483,19 +504,7 @@ function Comparison({ r }: { r: QuestionResults }) {
           {web.agree ? "The internet and the crowd agree" : "The crowd contradicts the internet"}
         </p>
       )}
-      {market && (
-        <div className="rounded-[18px] bg-surface p-4 ring-1 ring-line">
-          <p className="text-[18px] font-semibold tabular-nums tracking-tight">
-            Market {market.market_pct}% <span className="text-muted">·</span> People there{" "}
-            {market.humans_pct === null ? "–" : `${market.humans_pct}%`}
-          </p>
-          <p className="mt-1 text-[12.5px] leading-snug text-muted">
-            Chance of &ldquo;{market.yes_option}&rdquo;
-            {market.label ? ` · ${market.label}` : ""} · {market.provider}
-            {market.gap !== null && market.gap !== 0 && ` · crowd is ${Math.abs(market.gap)} pts ${market.gap > 0 ? "above" : "below"} the market`}
-          </p>
-        </div>
-      )}
+      {comparison && <MarketVsHumans questionId={r.id} initial={comparison} />}
     </section>
   );
 }

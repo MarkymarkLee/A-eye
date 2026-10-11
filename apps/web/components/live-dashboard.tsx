@@ -6,6 +6,8 @@ import { Camera, Coins, Eye, Lock as LockSimple, Bot as Robot, Trophy, Undo2 as 
 import type { ActivityEvent, ActivityResponse } from "@/lib/activity-types";
 import { formatDistance } from "@/lib/geo";
 import { ago, timeLeft } from "@/lib/time";
+import type { MarketComparison } from "@a-eye/shared";
+import { MarketsPanel } from "./markets-panel";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
@@ -25,7 +27,17 @@ const txUrl = (tx: string) => `https://sepolia.basescan.org/tx/${tx}`;
 const short = (h: string) => (h.length > 18 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
 const money = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
-export function LiveDashboard({ initial, qrSvg, target }: { initial: ActivityResponse; qrSvg: string; target: string }) {
+export function LiveDashboard({
+  initial,
+  initialMarkets,
+  qrSvg,
+  target,
+}: {
+  initial: ActivityResponse;
+  initialMarkets: MarketComparison[];
+  qrSvg: string;
+  target: string;
+}) {
   const [data, setData] = useState(initial);
   const [events, setEvents] = useState(() => [...initial.events].sort(order));
   const [now, setNow] = useState(() => Date.parse(initial.now));
@@ -89,6 +101,8 @@ export function LiveDashboard({ initial, qrSvg, target }: { initial: ActivityRes
           accent
         />
       </dl>
+
+      <MarketsPanel initial={initialMarkets} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,0.8fr)]">
         <aside className="space-y-6">
