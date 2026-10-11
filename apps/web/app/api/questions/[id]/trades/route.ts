@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { RecordMarketTradeInput } from "@a-eye/shared";
-import { getQuestionMarketRef, marketTrades, recordMarketTrade } from "@/lib/store";
+import { getMarketQuestion, getQuestionMarketRef, recordMarketTrade } from "@/lib/store";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (getQuestionMarketRef(id) === undefined) {
+  const question = await getMarketQuestion(id);
+  if (!question) {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
   }
-  return NextResponse.json({ trades: marketTrades(id) }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ trades: question.market_trades }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

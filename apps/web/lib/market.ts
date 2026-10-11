@@ -10,12 +10,13 @@ export async function marketComparison(questionId: string): Promise<MarketCompar
 
   const yesIndex = yesOptionIndex(data.options, marketRef);
   const responses = data.tally.reduce((sum, row) => sum + row.count, 0);
+  const sealed = data.sealed;
   const live = await liveOdds(marketRef);
   const impliedYes = live?.implied_yes ?? marketRef.implied_yes ?? null;
   const marketPct = impliedYes === null ? null : Math.round(impliedYes * 100);
   const askedMarketPct =
     typeof marketRef.implied_yes === "number" ? Math.round(marketRef.implied_yes * 100) : null;
-  const crowdPct = responses > 0 ? data.tally[yesIndex]?.pct ?? 0 : null;
+  const crowdPct = !sealed && responses > 0 ? data.tally[yesIndex]?.pct ?? 0 : null;
 
   return {
     question_id: data.question.id,

@@ -289,6 +289,7 @@ export async function runQuestionMode(questionId: string, dryRun: boolean, log: 
   const results = await response.json() as Record<string, unknown>;
   const marketRef = results.market_ref as Record<string, unknown> | undefined;
   if (!marketRef || marketRef.provider !== "gemini") throw new Error("Question has no Gemini market_ref.");
+  if (results.sealed === true) throw new Error(`Results for question ${questionId} are sealed.`);
   const symbol = String(marketRef.contract_symbol ?? "");
   const report = await listObservableMarkets({ questionMinutes: 0 });
   const candidate = report.candidates.find((item) => item.contract_symbol === symbol) ?? {
@@ -305,8 +306,19 @@ export async function runQuestionMode(questionId: string, dryRun: boolean, log: 
     expiry: typeof marketRef.expiry === "string" ? marketRef.expiry : null,
   };
   const implied = candidate.implied_yes ?? (typeof marketRef.implied_yes === "number" ? marketRef.implied_yes : null);
-  const tally = Array.isArray(results.tally) ? results.tally as { pct?: number }[] : [];
-  const crowdPct = Number(tally[0]?.pct ?? 0);
+  const tally = Array.isArray(results.tally) ? results.tally as { option?: string; pct?: number }[] : [];
+  const options = Array.isArray(results.options)
+    ? results.options.filter((option): option is string => typeof option === "string")
+    : tally.map((row) => String(row.option ?? ""));
+  const requestedYesIndex = marketRef.yes_option_index;
+  const yesIndex =
+    typeof requestedYesIndex === "number" &&
+    Number.isInteger(requestedYesIndex) &&
+    requestedYesIndex >= 0 &&
+    requestedYesIndex < options.length
+      ? requestedYesIndex
+      : Math.max(options.findIndex((option) => /^\s*yes\b/i.test(option)), 0);
+  const crowdPct = Number(tally[yesIndex]?.pct ?? 0);
   const sizing = sizeTrade({
     crowdYesPct: crowdPct,
     responses: Number(results.responses ?? 0),

@@ -18,6 +18,12 @@ const base = {
 };
 
 describe("market_ref", () => {
+  it("requires distinct options and a prize of at least one cent", () => {
+    expect(CreateQuestionInput.safeParse({ ...base, options: ["Yes", "yes "] }).success).toBe(false);
+    expect(CreateQuestionInput.safeParse({ ...base, prize_usd: 0.001 }).success).toBe(false);
+    expect(CreateQuestionInput.safeParse({ ...base, prize_usd: 0.01 }).success).toBe(true);
+  });
+
   it("round-trips through the store", async () => {
     const market_ref = { provider: "gemini-predictions", env: "sandbox" as const, event_ticker: "GEMI-WXHIGH-SFO" };
     const id = store.createQuestion(CreateQuestionInput.parse({ ...base, market_ref }));
