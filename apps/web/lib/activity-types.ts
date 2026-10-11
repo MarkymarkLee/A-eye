@@ -16,11 +16,20 @@ export type ActivityEvent =
       type: "photo";
       submission_id: string;
       answer: string;
+      sealed?: true;
       free_text?: string;
       distance_m: number;
       accuracy_m: number;
       observer: string;
       thumb_url: string;
+    })
+  | (Base & {
+      type: "peek";
+      tx: string;
+      amount: number;
+      currency: string;
+      payer_address?: string;
+      responses_at_peek: number;
     })
   | (Base & {
       type: "question_closed";
@@ -56,6 +65,7 @@ export type ActivityCounters = {
   unique_observers: number;
   ausd_paid: number;
   ausd_bounties: number;
+  ausd_peeks: number;
   onchain_txs: number;
 };
 

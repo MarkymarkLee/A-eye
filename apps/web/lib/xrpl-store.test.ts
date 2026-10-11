@@ -24,7 +24,8 @@ const xrpl = vi.hoisted(() => ({
 vi.mock("./xrpl", async (orig) => ({ ...(await orig<typeof import("./xrpl")>()), ...xrpl }));
 const { XrplError } = await import("./xrpl");
 const transferAusd = vi.fn();
-vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd }));
+const transferAusdViaFacilitator = vi.fn();
+vi.mock("./chain", async (orig) => ({ ...(await orig<typeof import("./chain")>()), transferAusd, transferAusdViaFacilitator }));
 
 vi.stubEnv("A_EYE_DB_PATH", ":memory:");
 vi.stubEnv("A_EYE_UPLOAD_DIR", mkdtempSync(path.join(tmpdir(), "a-eye-xrpl-")));

@@ -5,6 +5,10 @@ import { z } from "zod";
 export const QuestionStatus = z.enum(["open", "closed", "settled", "expired"]);
 export type QuestionStatus = z.infer<typeof QuestionStatus>;
 
+export const UNSAFE_TEXT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+export const isSafeText = (value: string) => !UNSAFE_TEXT.test(value);
+const SAFE_TEXT_ERROR = "Must not contain control or bidi-override characters.";
+
 /**
  * Optional provenance for a question that is tied to a prediction-market
  * contract (e.g. Gemini Predictions). Loose record so extra keys survive.
@@ -25,11 +29,15 @@ export const CreateQuestionInput = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   radius_m: z.number().int().min(25).max(2000).default(150),
-  question: z.string().trim().min(4).max(240),
-  options: z.array(z.string().trim().min(1).max(60)).min(2).max(6),
+  question: z.string().trim().min(4).max(240).refine(isSafeText, SAFE_TEXT_ERROR),
+  options: z
+    .array(z.string().trim().min(1).max(60).refine(isSafeText, SAFE_TEXT_ERROR))
+    .min(2)
+    .max(6)
+    .refine((opts) => new Set(opts.map((o) => o.trim().toLowerCase())).size === opts.length, "options must be distinct"),
   allow_free_text: z.boolean().default(false),
-  place_label: z.string().trim().max(80).optional(),
-  prize_usd: z.number().positive().max(500).default(1),
+  place_label: z.string().trim().max(80).refine(isSafeText, SAFE_TEXT_ERROR).optional(),
+  prize_usd: z.number().min(0.01).max(500).default(1),
   min_responses: z.number().int().min(1).max(100).default(3),
   max_responses: z.number().int().min(1).max(500).default(20),
   closes_in_minutes: z.number().int().min(1).max(24 * 60).default(30),
@@ -49,7 +57,7 @@ export type CreateQuestionInput = z.infer<typeof CreateQuestionInput>;
 
 export const SubmissionFields = z.object({
   option_index: z.coerce.number().int().min(0).max(5),
-  free_text: z.string().trim().max(280).optional(),
+  free_text: z.string().trim().max(280).refine(isSafeText, SAFE_TEXT_ERROR).optional(),
   lat: z.coerce.number().min(-90).max(90),
   lng: z.coerce.number().min(-180).max(180),
   accuracy_m: z.coerce.number().min(0),
@@ -58,6 +66,17 @@ export const SubmissionFields = z.object({
 export type SubmissionFields = z.infer<typeof SubmissionFields>;
 
 export type TallyRow = { option: string; count: number; pct: number };
+
+export type AusdFlow = {
+  kind: "bounty" | "peek" | "payout" | "refund";
+  amount: number;
+  currency: string;
+  tx: string;
+  url: string;
+  from_label: "agent" | `agent ${string}` | "treasury";
+  to_label: "treasury" | "agent" | string;
+  at?: string;
+};
 
 /** How often an observer's answers matched the majority of the other answers on closed questions; weight evidence by it. */
 export type ObserverReputation = { agreement_rate: number | null; scored_answers: number; answer_count: number };
@@ -144,6 +163,10 @@ export type QuestionResults = QuestionSummary & {
   web_baseline?: { answer: string; source: string };
   raffle: RaffleInfo;
   gallery_url: string;
+  sealed?: boolean;
+  peek?: { price_usd: number; url: string };
+  pot_usd: number;
+  ausd_flows: AusdFlow[];
 };
 
 export const GEO_RULES = {

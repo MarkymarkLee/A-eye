@@ -1,5 +1,6 @@
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
-import { assertPublicUrl, isPublicAddress, postWebhook } from "./webhook";
+import { assertPublicUrl, isPublicAddress, postWebhook, publicOnlyLookup } from "./webhook";
 
 describe("webhook URL safety", () => {
   it.each([
@@ -24,13 +25,23 @@ describe("webhook URL safety", () => {
     "ff02::1",
     "::ffff:127.0.0.1",
     "::ffff:0a00:0001",
+    "::7f00:1",
+    "::127.0.0.1",
+    "64:ff9b::7f00:1",
+    "64:ff9b::10.0.0.1",
+    "2002:7f00:1::",
+    "2002:a00:1::1",
+    "192.0.2.1",
   ])("blocks non-public address %s", (ip) => {
     expect(isPublicAddress(ip)).toBe(false);
   });
 
-  it.each(["8.8.8.8", "2606:4700::1111", "::ffff:8.8.8.8"])("allows public address %s", (ip) => {
+  it.each(["8.8.8.8", "2606:4700::1111", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:808:808::1"])(
+    "allows public address %s",
+    (ip) => {
     expect(isPublicAddress(ip)).toBe(true);
-  });
+    },
+  );
 
   it("rejects non-http, localhost, and private literal URLs", async () => {
     await expect(assertPublicUrl("ftp://example.com")).rejects.toThrow("http(s)");
@@ -45,6 +56,24 @@ describe("webhook URL safety", () => {
     const publicLookup = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
     await expect(assertPublicUrl("https://hooks.example.com", privateLookup)).rejects.toThrow("public addresses");
     await expect(assertPublicUrl("https://hooks.example.com", publicLookup)).resolves.toBeUndefined();
+  });
+
+  it("resolves through a public-only lookup callback", async () => {
+    const invoke = (lookup: ReturnType<typeof publicOnlyLookup>, all = false) =>
+      new Promise<unknown[]>((resolve) => {
+        (lookup as unknown as (
+          hostname: string,
+          options: { all: boolean },
+          callback: (...args: unknown[]) => void,
+        ) => void)("hook.test", { all }, (...args) => resolve(args));
+      });
+
+    const blocked = await invoke(publicOnlyLookup(async () => [{ address: "10.0.0.1", family: 4 }]));
+    expect(blocked[0]).toBeInstanceOf(Error);
+    const allowed = await invoke(publicOnlyLookup(async () => [{ address: "93.184.216.34", family: 4 }]));
+    expect(allowed).toEqual([null, "93.184.216.34", 4]);
+    const allAllowed = await invoke(publicOnlyLookup(async () => [{ address: "93.184.216.34", family: 4 }]), true);
+    expect(allAllowed).toEqual([null, [{ address: "93.184.216.34", family: 4 }]]);
   });
 });
 
@@ -103,5 +132,29 @@ describe("postWebhook", () => {
       attempts: 0,
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("blocks DNS rebinding between URL validation and the HTTP connection", async () => {
+    let received = 0;
+    const server = createServer((_req, res) => {
+      received += 1;
+      res.end("unexpected");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Server did not bind");
+    let lookupCount = 0;
+    const lookup = vi.fn(async () => {
+      lookupCount += 1;
+      return [{ address: lookupCount === 1 ? "93.184.216.34" : "127.0.0.1", family: 4 }];
+    });
+    try {
+      const result = await postWebhook(`http://rebind.test:${address.port}/`, payload, { lookup, retryDelayMs: 0 });
+      expect(result.ok).toBe(false);
+      expect(lookupCount).toBeGreaterThanOrEqual(2);
+      expect(received).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
   });
 });
