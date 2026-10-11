@@ -10,6 +10,16 @@ import { TallyBars } from "@/components/tally-bars";
 import { AskForm } from "@/components/ask-form";
 import { Reveal } from "@/components/reveal";
 import { formatDistance } from "@/lib/geo";
+import { ConnectAgent } from "@/components/connect-agent";
+import {
+  MCPB_DOWNLOAD_PATH,
+  claudeCodeCommand,
+  claudeDesktopConfig,
+  cursorInstallLink,
+  mcpUrl,
+  vscodeInstallLink,
+  windsurfConfig,
+} from "@/lib/connect-links";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "For agents", description: "Give your AI agent eyes on any place, answered by people standing there." };
@@ -35,6 +45,15 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const open = await allOpenQuestions();
   const featured = [...open].sort((a, b) => b.responses - a.responses)[0];
   const live = featured ? await getResults(featured.id, origin) : undefined;
+  const links = {
+    mcpUrl: mcpUrl(origin),
+    cursor: cursorInstallLink(origin),
+    vscode: vscodeInstallLink(origin),
+    claudeCode: claudeCodeCommand(origin),
+    claudeDesktop: claudeDesktopConfig(),
+    windsurf: windsurfConfig(origin),
+    mcpb: MCPB_DOWNLOAD_PATH,
+  };
   const initial = sp.lat && sp.lng ? { lat: Number(sp.lat), lng: Number(sp.lng) } : undefined;
 
   return (
@@ -52,7 +71,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
-              <a href="#api">
+              <a href="#connect">
                 Connect an agent <ArrowRight className="size-4" strokeWidth={2.4} aria-hidden />
               </a>
             </Button>
@@ -124,11 +143,20 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
         </ol>
       </section>
 
+      <section id="connect" className="mx-auto max-w-[1400px] scroll-mt-20 px-4 pt-20 md:px-6 lg:pt-28">
+        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Connect in one step.</h2>
+        <p className="mt-3 max-w-[60ch] text-[16px] leading-relaxed text-muted">
+          A-eye is a hosted MCP server. Point any MCP client at the URL, or run <code className="whitespace-nowrap font-mono text-[15px]">npx -y a-eye-mcp</code>{" "}
+          locally. Same tools either way.
+        </p>
+        <ConnectAgent links={links} />
+      </section>
+
       <section id="api" className="mx-auto grid max-w-[1400px] scroll-mt-20 gap-10 px-4 py-20 md:px-6 lg:grid-cols-2 lg:gap-16 lg:py-28">
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Any HTTP agent can ask today.</h2>
           <p className="mt-3 max-w-[56ch] text-[16px] leading-relaxed text-muted">
-            Post a question, then poll its results. In local dev it&apos;s free; x402 payment is the next milestone.
+            Post a question, then poll its results. Pots are paid over x402 in AUSD; unpaid requests get a 402 with the payment requirements.
           </p>
           <pre className="mt-6 overflow-x-auto rounded-[20px] bg-[#0f1216] p-5 shadow-lift ring-1 ring-white/5 font-mono text-[12.5px] leading-relaxed text-[#d6dae0]">
 {`curl -X POST ${origin}/api/questions \\
@@ -145,7 +173,7 @@ curl ${origin}/api/questions/<question_id>`}
         </div>
         <div className="min-w-0">
           <h3 className="text-lg font-semibold tracking-tight">MCP tools</h3>
-          <p className="mt-1 text-[14px] text-muted">The stdio server in packages/mcp wraps the same API. In progress.</p>
+          <p className="mt-1 text-[14px] text-muted">Served at /mcp and by the a-eye-mcp npm package.</p>
           <dl className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
             {TOOLS.map(([name, body]) => (
               <div key={name}>
