@@ -29,8 +29,8 @@ const results = (status: "open" | "closed") => ({
   raffle: { winner: null, payout_tx: null, seed_commit: "ab", seed_reveal: null, entropy_block_hash: null },
 });
 
-async function connect(fetchImpl: FetchLike) {
-  const server = createServer(new AEyeApi(BASE, fetchImpl), { pollIntervalMs: 1 });
+async function connect(fetchImpl: FetchLike, options: { pollIntervalMs?: number; maxImages?: number } = {}) {
+  const server = createServer(new AEyeApi(BASE, fetchImpl), { pollIntervalMs: 1, ...options });
   const client = new Client({ name: "test", version: "0" });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
@@ -48,6 +48,7 @@ describe("a-eye MCP server", () => {
       "list_my_questions",
       "wait_for_results",
     ]);
+    expect(tools.find((tool) => tool.name === "ask_location_question")?.inputSchema.properties).toHaveProperty("webhook_url");
   });
 
   it("posts a validated question with defaults applied", async () => {
@@ -67,10 +68,16 @@ describe("a-eye MCP server", () => {
     });
     const res = await client.callTool({
       name: "ask_location_question",
-      arguments: { lat: 37.87, lng: -122.25, question: "Is there a line?", options: ["Yes", "No"] },
+      arguments: {
+        lat: 37.87,
+        lng: -122.25,
+        question: "Is there a line?",
+        options: ["Yes", "No"],
+        webhook_url: "https://hooks.example.com/events",
+      },
     });
     expect(res.isError).toBeFalsy();
-    expect(body).toMatchObject({ radius_m: 150, prize_usd: 1, min_responses: 3 });
+    expect(body).toMatchObject({ radius_m: 150, prize_usd: 1, min_responses: 3, webhook_url: "https://hooks.example.com/events" });
   });
 
   it("waits until the question closes and returns photos as image blocks", async () => {
@@ -106,5 +113,44 @@ describe("a-eye MCP server", () => {
     const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toContain("Payment required");
+  });
+
+  it("downscales attached evidence photos to at most 512 px", async () => {
+    const sharp = (await import("sharp")).default;
+    const photo = await sharp({
+      create: { width: 2000, height: 1500, channels: 3, background: { r: 220, g: 30, b: 60 } },
+    })
+      .jpeg()
+      .toBuffer();
+    const client = await connect(async (url) => {
+      if (url.endsWith("/img/large.jpg")) return new Response(photo, { headers: { "content-type": "image/jpeg" } });
+      return Response.json({
+        ...results("closed"),
+        evidence: [{ ...results("closed").evidence[0], image_url: `${BASE}/img/large.jpg` }],
+      });
+    });
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
+    const image = (res.content as Array<{ type: string; mimeType?: string; data?: string }>).find((block) => block.type === "image")!;
+    const metadata = await sharp(Buffer.from(image.data!, "base64")).metadata();
+    expect(image.mimeType).toBe("image/jpeg");
+    expect(Math.max(metadata.width!, metadata.height!)).toBeLessThanOrEqual(512);
+  });
+
+  it("caps attached photos and reports how many were omitted", async () => {
+    const tenEvidence = Array.from({ length: 10 }, (_, i) => ({
+      ...results("closed").evidence[0],
+      image_url: `${BASE}/img/${i}.jpg`,
+    }));
+    const client = await connect(
+      async (url) => {
+        if (url.includes("/img/")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
+        return Response.json({ ...results("closed"), evidence: tenEvidence });
+      },
+      { maxImages: 3 },
+    );
+    const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
+    const content = res.content as Array<{ type: string; text?: string }>;
+    expect(content.filter((block) => block.type === "image")).toHaveLength(3);
+    expect(content.some((block) => block.text?.includes("+7 more photos not attached; see"))).toBe(true);
   });
 });

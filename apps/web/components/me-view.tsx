@@ -5,6 +5,7 @@ import { ArrowRight, Trophy } from "@phosphor-icons/react";
 import { ago } from "@/lib/time";
 import type { ObserverStats } from "@/lib/reputation";
 import { BadgeGrid, pct } from "./badges";
+import { PushOptIn } from "./push-opt-in";
 
 type Observer = { id: string; display_name: string; evm_address?: string };
 type Entry = {
@@ -146,6 +147,12 @@ export function MeView() {
             </button>
           </form>
         )}
+
+        <div className="mt-10">
+          <h2 className="text-xl font-semibold tracking-tight">Alerts</h2>
+          <p className="mt-1 text-[13px] text-muted">Get a notification when a new question pops up near you.</p>
+          <PushOptIn />
+        </div>
       </section>
 
       <section>
