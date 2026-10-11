@@ -180,10 +180,14 @@ describe("core loop correctness", () => {
     const freeQ = ask({ allow_free_text: true });
     expect(await submit(freeQ, `dup-${id}-f`, { free_text: "all good" })).toMatchObject({ ok: true });
 
-    const res = (await store.getResults(id, "http://a-eye.test"))!;
-    expect(res.evidence.find((e) => e.answer === "Yes")!.free_text).toBeUndefined();
-    const freeRes = (await store.getResults(freeQ, "http://a-eye.test"))!;
-    expect(freeRes.evidence[0]!.free_text).toBe("all good");
+    const stored = (qid: string) =>
+      store
+        .db()
+        .prepare("select free_text from submissions where question_id = ?")
+        .all(qid)
+        .map((r) => (r as { free_text: string | null }).free_text);
+    expect(stored(id).every((t) => t === null)).toBe(true);
+    expect(stored(freeQ)).toContain("all good");
   });
 
   it("expires with zero responses, settles a single response, and tally percentages sum to 100", async () => {
