@@ -133,7 +133,7 @@ export function PotBreakdown({ prize, pot, currency, fee }: { prize: number; pot
         <div key={c.label} className={cn("min-w-0 rounded-[14px] p-3", c.hot ? "bg-accent-soft text-accent-ink" : "bg-surface-2")}>
           <dt className={cn("text-[12px] font-medium", !c.hot && "text-muted")}>{c.label}</dt>
           <dd className="mt-0.5 font-mono text-[17px] font-semibold tabular-nums">
-            {fmt(c.value)} <span className="text-[11px] font-medium opacity-70">{currency}</span>
+            {fmt(c.value)} <span className={cn("text-[11px] font-medium", !c.hot && "text-muted")}>{currency}</span>
           </dd>
           <dd className={cn("text-[11.5px] leading-tight", !c.hot && "text-muted")}>{c.hint}</dd>
         </div>

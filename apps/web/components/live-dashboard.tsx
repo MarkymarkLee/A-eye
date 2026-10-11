@@ -11,6 +11,7 @@ import { MarketsPanel } from "./markets-panel";
 import { MoneyTimeline, type MoneyFlow } from "./money-timeline";
 import { Button } from "./ui/button";
 import { Sheet } from "./ui/sheet";
+import { TestMoney } from "@/components/ui/test-money";
 
 const POLL_MS = 3000;
 // Photos carry the phone's capture time, which can trail the server clock, so each poll overlaps the last.
@@ -116,6 +117,7 @@ export function LiveDashboard({
         <Counter label="Unique observers" value={c.unique_observers} sub="people who answered" />
         <Counter
           label="AUSD paid to humans"
+          extra={<TestMoney align="end" />}
           value={money(c.ausd_paid)}
           sub={`${money(c.ausd_bounties)} AUSD bounties · ${money(c.ausd_peeks ?? 0)} AUSD peeks · ${c.onchain_txs} on-chain tx`}
           accent
@@ -135,7 +137,7 @@ export function LiveDashboard({
             <h2 className="text-[17px] font-semibold tracking-tight">Scan to answer</h2>
             <p className="mt-1 text-[14px] leading-snug text-muted">Open the camera, answer a question nearby, enter the raffle.</p>
             <div
-              className="mt-4 rounded-[12px] bg-white p-4 [&>svg]:h-auto [&>svg]:w-full"
+              className="mx-auto mt-4 max-w-[320px] rounded-[12px] bg-white p-4 lg:max-w-none [&>svg]:h-auto [&>svg]:w-full"
               role="img"
               aria-label={`QR code for ${host}`}
               dangerouslySetInnerHTML={{ __html: qrSvg }}
@@ -176,9 +178,12 @@ export function LiveDashboard({
           </section>
 
           <section aria-labelledby="money-trail" className="rounded-[16px] bg-surface p-5 shadow-panel ring-1 ring-line">
-            <h2 id="money-trail" className="flex items-center gap-2 text-[17px] font-semibold tracking-tight">
-              <Coins className="size-5 text-accent-ink" aria-hidden /> Where the money went
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="money-trail" className="flex items-center gap-2 text-[17px] font-semibold tracking-tight">
+                <Coins className="size-5 text-accent-ink" aria-hidden /> Where the money went
+              </h2>
+              <TestMoney align="end" />
+            </div>
             <p className="mt-1 text-[13.5px] leading-snug text-muted">Real AUSD moving on Base Sepolia, newest first. Every step has a public receipt.</p>
             {flows.length === 0 ? (
               <p className="mt-3 text-[14px] text-muted">No money has moved yet. When an agent pays for a question, it shows up here.</p>
@@ -246,14 +251,17 @@ export function LiveDashboard({
   );
 }
 
-function Counter({ label, value, sub, accent }: { label: string; value: number | string; sub: string; accent?: boolean }) {
+function Counter({ label, value, sub, accent, extra }: { label: string; value: number | string; sub: string; accent?: boolean; extra?: React.ReactNode }) {
   return (
     <div className="rounded-[16px] bg-surface p-4 shadow-panel ring-1 ring-line md:p-5">
-      <dt className="text-[13px] text-muted">{label}</dt>
+      <dt className="flex flex-wrap items-center justify-between gap-1.5 text-[13px] text-muted">
+        {label}
+        {extra}
+      </dt>
       <dd className={`mt-1 font-mono text-[40px] font-semibold leading-none tracking-tight md:text-[56px] ${accent ? "text-accent-ink" : ""}`}>
         {value}
       </dd>
-      <p className="mt-2 truncate text-[12.5px] text-muted">{sub}</p>
+      <dd className="mt-2 truncate text-[12.5px] text-muted">{sub}</dd>
     </div>
   );
 }

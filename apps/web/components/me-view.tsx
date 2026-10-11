@@ -22,6 +22,7 @@ import { XrplWalletSetup } from "./xrpl-wallet-setup";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs } from "./ui/tabs";
 import type { ObserverPrize } from "@a-eye/shared";
+import { TestMoney } from "@/components/ui/test-money";
 
 type Observer = { id: string; display_name: string; evm_address?: string; xrpl_address?: string; payout_rail: "evm" | "xrpl" };
 type Account = { has_passkey: boolean; wallet: { address: string; source: "passkey" | "pasted" } | null };
@@ -80,6 +81,7 @@ export function MeView() {
   const [rail, setRail] = useState<"evm" | "xrpl">("evm");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errField, setErrField] = useState<"wallet" | "xrpl" | null>(null);
   const [passkeyBusy, setPasskeyBusy] = useState<"save" | "login" | null>(null);
   const [walletBusy, setWalletBusy] = useState(false);
   const [prizes, setPrizes] = useState<ObserverPrize[]>([]);
@@ -219,8 +221,21 @@ export function MeView() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    // Same checks as app/api/me/route.ts, so typos are flagged without a 400 round trip.
+    const w = wallet.trim();
+    const x = xrplAddress.trim();
+    const fail = (field: "wallet" | "xrpl", msg: string) => {
+      setErr(msg);
+      setErrField(field);
+      haptic("error");
+      document.getElementById(field)?.focus();
+    };
+    if (w && !/^0x[a-fA-F0-9]{40}$/.test(w)) return fail("wallet", "Use a 0x address with 40 hex characters.");
+    if (rail === "xrpl" && !x) return fail("xrpl", "Add an XRPL address to get paid on XRPL.");
+    if (x && !/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(x)) return fail("xrpl", "Use a classic XRPL address starting with r.");
     setSaving(true);
     setErr(null);
+    setErrField(null);
     const res = await fetch("/api/me", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -235,6 +250,7 @@ export function MeView() {
     } else {
       haptic("error");
       setErr(j.error);
+      setErrField(null);
     }
   }
 
@@ -337,8 +353,20 @@ export function MeView() {
         <p className="rounded-[14px] bg-bad-soft px-3.5 py-3 text-[14px] text-bad">Couldn&apos;t load your profile. Refresh to try again.</p>
       ) : !me ? (
         <div className="grid gap-4" aria-label="Loading profile" aria-busy>
-          <Skeleton className="h-12 rounded-[14px]" />
-          <Skeleton className="h-12 rounded-[14px]" />
+          <Card className="grid gap-5 p-5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="grid gap-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-[46px] rounded-[14px]" />
+                <Skeleton className="h-3.5 w-56" />
+              </div>
+            ))}
+            <Skeleton className="h-[52px] rounded-full" />
+          </Card>
+          <Card className="grid gap-2 p-5">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-4 w-64" />
+          </Card>
         </div>
       ) : (
         <Card className="p-5">
@@ -365,10 +393,19 @@ export function MeView() {
           )}
           <form onSubmit={save} className="grid gap-4">
             <div className="grid gap-2">
-              <label htmlFor="name" className="text-[14px] font-semibold">
+              <label htmlFor="display-name" className="text-[14px] font-semibold">
                 Your name
               </label>
-              <input id="name" value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={40} className="field" />
+              <input
+                id="display-name"
+                name="display_name"
+                autoComplete="nickname"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                minLength={2}
+                maxLength={40}
+                className="field"
+              />
               <p className="text-[13px] text-muted">Shown under your photos.</p>
             </div>
             <Disclosure title="Advanced" className="bg-surface-2 ring-0">
@@ -379,13 +416,22 @@ export function MeView() {
                   </label>
                   <input
                     id="wallet"
+                    name="evm_address"
+                    autoComplete="off"
                     value={wallet}
-                    onChange={(e) => setWallet(e.target.value)}
+                    onChange={(e) => {
+                      setWallet(e.target.value);
+                      if (errField === "wallet") {
+                        setErrField(null);
+                        setErr(null);
+                      }
+                    }}
                     className="field font-mono text-[14px]"
                     placeholder="0x…"
                     spellCheck={false}
                     autoCapitalize="off"
-                    aria-describedby="wallet-help"
+                    aria-invalid={errField === "wallet" || undefined}
+                    aria-describedby={errField === "wallet" ? "wallet-help me-error" : "wallet-help"}
                   />
                   <p id="wallet-help" className="text-[13px] text-muted">
                     Paste a wallet address. Optional until you win.
@@ -430,13 +476,22 @@ export function MeView() {
                     </label>
                     <input
                       id="xrpl"
+                      name="xrpl_address"
+                      autoComplete="off"
                       value={xrplAddress}
-                      onChange={(e) => setXrplAddress(e.target.value)}
+                      onChange={(e) => {
+                        setXrplAddress(e.target.value);
+                        if (errField === "xrpl") {
+                          setErrField(null);
+                          setErr(null);
+                        }
+                      }}
                       className="field font-mono text-[14px]"
                       placeholder="r…"
                       spellCheck={false}
                       autoCapitalize="off"
-                      aria-describedby="xrpl-help"
+                      aria-invalid={errField === "xrpl" || undefined}
+                      aria-describedby={errField === "xrpl" ? "xrpl-help me-error" : "xrpl-help"}
                     />
                     <p id="xrpl-help" className="text-[13px] text-muted">
                       Starts with r. Also earns you a Verified Observer badge after {me.xrpl?.threshold ?? 3} answers.
@@ -464,7 +519,7 @@ export function MeView() {
               </div>
             </Disclosure>
             {err && (
-              <p role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
+              <p id="me-error" role="alert" className="rounded-[12px] bg-bad-soft px-3 py-2.5 text-[14px] text-bad">
                 {err}
               </p>
             )}
@@ -557,7 +612,11 @@ export function MeView() {
             value={me ? (me.stats?.current_streak ?? 0) : undefined}
             hint={me?.stats && me.stats.best_streak > me.stats.current_streak ? `Best ${me.stats.best_streak}` : undefined}
           />
-          <Stat icon={<Coins className="size-4" aria-hidden />} label="Test dollars earned" value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
+          <Stat icon={<Coins className="size-4" aria-hidden />} label={
+              <>
+                Test dollars earned <TestMoney className="ml-auto" align="end" />
+              </>
+            } value={me ? (me.stats?.ausd_earned ?? 0) : undefined} wide />
           <Stat
             icon={<Target className="size-4" aria-hidden />}
             label="Agreement"
@@ -622,7 +681,7 @@ function Stat({
   wide,
 }: {
   icon: React.ReactNode;
-  label: string;
+  label: React.ReactNode;
   value?: number | string;
   hint?: string;
   hot?: boolean;

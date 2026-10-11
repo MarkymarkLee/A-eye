@@ -6,10 +6,12 @@ import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Camera, ChevronRight, Compass, LocateFixed, MapPinOff, Navigation, Sparkles, Users } from "lucide-react";
 import type { QuestionSummary } from "@a-eye/shared";
 import { useLocation, type LocationState } from "@/hooks/use-location";
+import { useLocalFlag } from "@/hooks/use-local-flag";
 import { haptic } from "@/lib/haptics";
 import { walkHint, directionsUrl } from "@/lib/walk";
 import { cn } from "@/lib/cn";
 import { Morph } from "./motion/page";
+import { ONBOARDED_KEY } from "./onboarding";
 import { InstallPrompt } from "./install-prompt";
 import { PermissionHelp } from "./permission-help";
 import { PushOptIn } from "./push-opt-in";
@@ -19,6 +21,7 @@ import { Countdown } from "./ui/countdown";
 import { EmptyState } from "./ui/empty-state";
 import { Sheet } from "./ui/sheet";
 import { Skeleton } from "./ui/skeleton";
+import { TestMoney } from "@/components/ui/test-money";
 
 const QuestionMap = dynamic(() => import("./question-map").then((m) => m.QuestionMap), {
   ssr: false,
@@ -30,7 +33,9 @@ const FALLBACK = { lat: 37.8713, lng: -122.2596 };
 const RADIUS_KM = 5;
 
 export function NearbyView() {
-  const loc = useLocation();
+  // Don't pop the browser's location prompt while the onboarding ask is still up.
+  const [onboarded] = useLocalFlag(ONBOARDED_KEY);
+  const loc = useLocation(onboarded === true);
   const [questions, setQuestions] = useState<QuestionSummary[] | null>(null);
   const [error, setError] = useState(false);
   const [selected, setSelected] = useState<string | undefined>();
@@ -109,6 +114,7 @@ export function NearbyView() {
             <Badge tone="accent" size="md">
               <Sparkles className="size-3.5" aria-hidden /> {Math.round(pot * 100) / 100} {open[0]?.currency} up for grabs
             </Badge>
+            <TestMoney />
             <Badge size="md">
               <Camera className="size-3.5" aria-hidden /> ~20 sec per answer
             </Badge>
@@ -252,9 +258,12 @@ function Preview({ q }: { q: QuestionSummary }) {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         {open ? (
-          <Badge tone="solid" size="md">
-            {q.prize_amount} {q.currency} prize
-          </Badge>
+          <>
+            <Badge tone="solid" size="md">
+              {q.prize_amount} {q.currency} prize
+            </Badge>
+            <TestMoney />
+          </>
         ) : (
           <Badge size="md">Closed</Badge>
         )}

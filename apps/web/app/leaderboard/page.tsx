@@ -5,6 +5,7 @@ import { leaderboard } from "@/lib/store";
 import { peekObserverId } from "@/lib/observer";
 import type { LeaderboardRange } from "@/lib/reputation";
 import { BadgeIcons, pct } from "@/components/badges";
+import { TestMoney } from "@/components/ui/test-money";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           <p className="mt-2 max-w-[52ch] text-[15px] leading-relaxed text-muted">
             The people giving AI agents eyes on the ground, ranked by verified answers.
           </p>
+          <TestMoney className="mt-3" />
         </div>
         <nav aria-label="Time range" className="flex gap-1 rounded-full bg-surface-2 p-1 text-sm">
           {RANGES.map((r) => (

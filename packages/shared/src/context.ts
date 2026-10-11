@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// Strict CSP (no eval) — zod v4's JIT compiler probes Function(""); run jitless instead.
+z.config({ jitless: true });
+
 export const PlaceContext = z.object({
   name: z.string().nullable(),
   category: z.string().nullable(),
