@@ -32,15 +32,23 @@ import {
 import { explorerTxUrl } from "./chain";
 import {
   XrplError,
+  accountHasRlusdTrustLine,
   cancelEscrow,
   createPotEscrow,
   dropsToXrpString,
+  ensureReputationIssuance,
   explorerTx,
+  feeDestination,
   finishEscrow,
   isXrplConfigured,
   issueObserverCredential,
+  issuerAddress,
+  mintReputation,
+  observerLedgerStatus,
+  payoutRlusdViaAmm,
   payoutXrp,
-  potXrpForUsd,
+  potXrpForUsdQuoted,
+  settlePotBatch,
 } from "./xrpl";
 import { postWebhook } from "./webhook";
 
@@ -128,6 +136,12 @@ type XrplEscrowRow = {
   cancel_tx: string | null;
   payout_tx: string | null;
   payout_address: string | null;
+  batch_tx: string | null;
+  fee_tx: string | null;
+  fee_drops: string | null;
+  payout_currency: string | null;
+  payout_amount: string | null;
+  settle_mode: string | null;
   last_error: string | null;
 };
 
@@ -208,7 +222,26 @@ create table if not exists xrpl_escrows (
   cancel_tx text,
   payout_tx text,
   payout_address text,
+  batch_tx text,
+  fee_tx text,
+  fee_drops text,
+  payout_currency text,
+  payout_amount text,
+  settle_mode text,
   last_error text
+);
+create table if not exists xrpl_meta (
+  key text primary key,
+  value text not null
+);
+create table if not exists xrpl_reputation (
+  observer_id text not null,
+  address text not null,
+  minted integer not null default 0,
+  last_tx text,
+  last_error text,
+  updated_at text,
+  primary key (observer_id, address)
 );
 create table if not exists xrpl_credentials (
   observer_id text not null references observers(id),
@@ -244,6 +277,12 @@ function migrate(conn: DatabaseSync) {
   const obsCols = new Set((conn.prepare("pragma table_info(observers)").all() as { name: string }[]).map((c) => c.name));
   if (!obsCols.has("xrpl_address")) conn.exec("alter table observers add column xrpl_address text");
   if (!obsCols.has("payout_rail")) conn.exec("alter table observers add column payout_rail text not null default 'evm'");
+  const escCols = new Set(
+    (conn.prepare("pragma table_info(xrpl_escrows)").all() as { name: string }[]).map((c) => c.name),
+  );
+  for (const col of ["batch_tx", "fee_tx", "fee_drops", "payout_currency", "payout_amount", "settle_mode"]) {
+    if (!escCols.has(col)) conn.exec(`alter table xrpl_escrows add column ${col} text`);
+  }
 }
 
 export function db(): DatabaseSync {
@@ -315,7 +354,8 @@ export function observerEntries(observerId: string) {
     .prepare(
       `select s.id as submission_id, s.option_index, s.captured_at, q.id as question_id, q.prompt, q.options,
               q.status, q.prize_amount, q.currency, r.winner_submission_id, x.payout_tx as xrpl_payout_tx,
-              x.amount_drops as xrpl_drops
+              x.amount_drops as xrpl_drops, x.payout_currency as xrpl_payout_currency,
+              x.payout_amount as xrpl_payout_amount
          from submissions s
          join questions q on q.id = s.question_id
     left join raffles r on r.question_id = q.id
@@ -326,7 +366,8 @@ export function observerEntries(observerId: string) {
     .all(observerId) as Record<string, unknown>[];
   return rows.map((r) => {
     const won = r.winner_submission_id === r.submission_id;
-    const paidXrp = won && Boolean(r.xrpl_payout_tx);
+    const paidXrpl = won && Boolean(r.xrpl_payout_tx);
+    const paidRlusd = paidXrpl && r.xrpl_payout_currency === "RLUSD";
     return {
     submission_id: r.submission_id as string,
     question_id: r.question_id as string,
@@ -335,8 +376,10 @@ export function observerEntries(observerId: string) {
     captured_at: r.captured_at as string,
     status: r.status as QuestionStatus,
     won,
-    prize: paidXrp ? Number(dropsToXrpString(r.xrpl_drops as string)) : payoutAmount(r.prize_amount as number),
-    currency: paidXrp ? "XRP" : (r.currency as string),
+    prize: paidXrpl
+      ? Number((r.xrpl_payout_amount as string | null) ?? dropsToXrpString(r.xrpl_drops as string))
+      : payoutAmount(r.prize_amount as number),
+    currency: paidRlusd ? "RLUSD" : paidXrpl ? "XRP" : (r.currency as string),
     };
   });
 }
@@ -793,6 +836,7 @@ async function settle(id: string) {
     }
     await settleXrplPot(id);
     trackWebhook(id);
+    await syncQuestionReputation(id);
     return true;
   }
   const block = await latestBlock();
@@ -811,7 +855,18 @@ async function settle(id: string) {
   if (q.payment_tx && draw?.winner && !(escrowed && xrplWinner)) await payWinner(id, draw.winner, q.prize_amount);
   await settleXrplPot(id);
   trackWebhook(id);
+  await syncQuestionReputation(id);
   return true;
+}
+
+/** Mint AEYE reputation for a settled/expired question's submitters; never throws. */
+async function syncQuestionReputation(questionId: string) {
+  try {
+    const ids = submissionsFor(questionId).map((s) => s.observer_id);
+    if (ids.length) await syncObserverReputation(ids);
+  } catch (err) {
+    console.error(`[xrpl] reputation sync for ${questionId} failed: ${xrplError(err)}`);
+  }
 }
 
 const pendingWebhooks = new Set<Promise<void>>();
@@ -910,11 +965,13 @@ export async function escrowQuestionPot(questionId: string): Promise<string | nu
   const finishAfter = new Date(Date.now() + XRPL_FINISH_DELAY_MS);
   const cancelAfter = new Date(Math.max(Date.parse(q.closes_at), finishAfter.getTime()) + XRPL_CANCEL_GRACE_MS);
   try {
-    const escrow = await createPotEscrow(potXrpForUsd(payoutAmount(q.prize_amount)), finishAfter, { cancelAfter });
+    // The gross prize is escrowed; the platform fee is a separate inner payment at settle time.
+    const escrow = await createPotEscrow(await potXrpForUsdQuoted(q.prize_amount), finishAfter, { cancelAfter });
+    const feeDrops = Math.floor(Number(escrow.amount_drops) * PLATFORM_FEE);
     db()
       .prepare(
-        `insert into xrpl_escrows (question_id, owner, offer_sequence, amount_drops, escrow_tx, finish_after, cancel_after)
-         values (?, ?, ?, ?, ?, ?, ?)`,
+        `insert into xrpl_escrows (question_id, owner, offer_sequence, amount_drops, escrow_tx, finish_after, cancel_after, fee_drops)
+         values (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         questionId,
@@ -924,6 +981,7 @@ export async function escrowQuestionPot(questionId: string): Promise<string | nu
         escrow.hash,
         finishAfter.toISOString(),
         cancelAfter.toISOString(),
+        String(feeDrops),
       );
     console.info(`[xrpl] pot escrow for ${questionId}: ${escrow.explorer_url}`);
     return escrow.hash;
@@ -962,8 +1020,10 @@ export async function settleXrplPot(questionId: string): Promise<void> {
     );
   if (claim.changes !== 1) return;
 
-  const set = (col: "finish_tx" | "cancel_tx" | "payout_tx" | "payout_address", value: string) =>
-    db().prepare(`update xrpl_escrows set ${col} = ? where question_id = ?`).run(value, questionId);
+  const set = (
+    col: "finish_tx" | "cancel_tx" | "payout_tx" | "payout_address" | "batch_tx" | "fee_tx" | "payout_currency" | "payout_amount" | "settle_mode",
+    value: string,
+  ) => db().prepare(`update xrpl_escrows set ${col} = ? where question_id = ?`).run(value, questionId);
   try {
     if (q.status === "expired") {
       if (!row.cancel_tx) set("cancel_tx", (await cancelEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).hash);
@@ -974,14 +1034,55 @@ export async function settleXrplPot(questionId: string): Promise<void> {
       | { winner_submission_id: string | null }
       | undefined;
     const payTo = raffle?.winner_submission_id ? xrplPayoutAddress(raffle.winner_submission_id) : undefined;
+    const feeDrops = Number(row.fee_drops ?? Math.floor(Number(row.amount_drops) * PLATFORM_FEE));
+    const rlusdValue = payoutAmount(q.prize_amount).toFixed(6).replace(/\.?0+$/, "");
+    // Preferred path: finish + payout + fee in one all-or-nothing Batch.
+    if (payTo && !row.finish_tx && !row.cancel_tx && !cancelable && !row.batch_tx) {
+      try {
+        const settledBatch = await settlePotBatch({
+          owner: row.owner,
+          offerSequence: row.offer_sequence,
+          winner: payTo,
+          rlusdValue,
+          feeDrops,
+          feeDestination: feeDestination(),
+        });
+        set("batch_tx", settledBatch.batch.hash);
+        set("finish_tx", settledBatch.finish.hash);
+        set("payout_address", payTo);
+        set("payout_tx", settledBatch.payout.hash);
+        if (settledBatch.fee) set("fee_tx", settledBatch.fee.hash);
+        set("payout_currency", settledBatch.payout_currency);
+        set("payout_amount", settledBatch.payout_amount);
+        set("settle_mode", "batch");
+        db().prepare("update xrpl_escrows set state = 'finished', last_error = null where question_id = ?").run(questionId);
+        return;
+      } catch (err) {
+        if (!(err instanceof XrplError)) throw err;
+        console.warn(`[xrpl] batch settlement for ${questionId} unavailable (${err.code}); settling sequentially`);
+      }
+    }
     if (!row.finish_tx && !row.cancel_tx) {
       // Past CancelAfter the escrow can no longer be finished; cancel it back to the treasury instead.
       if (cancelable) set("cancel_tx", (await cancelEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).hash);
       else set("finish_tx", (await finishEscrow({ owner: row.owner, offerSequence: row.offer_sequence })).finish.hash);
     }
     if (payTo && !row.payout_tx) {
+      const payoutDrops = (BigInt(row.amount_drops) - BigInt(feeDrops)).toString();
       set("payout_address", payTo);
-      set("payout_tx", (await payoutXrp(payTo, row.amount_drops)).hash);
+      if (await accountHasRlusdTrustLine(payTo)) {
+        set("payout_tx", (await payoutRlusdViaAmm(payTo, rlusdValue, payoutDrops)).hash);
+        set("payout_currency", "RLUSD");
+        set("payout_amount", rlusdValue);
+      } else {
+        set("payout_tx", (await payoutXrp(payTo, payoutDrops)).hash);
+        set("payout_currency", "XRP");
+        set("payout_amount", dropsToXrpString(payoutDrops));
+      }
+      set("settle_mode", "sequential");
+    }
+    if (payTo && feeDrops > 0 && !row.fee_tx) {
+      set("fee_tx", (await payoutXrp(feeDestination(), String(feeDrops))).hash);
     }
     db().prepare("update xrpl_escrows set state = 'finished', last_error = null where question_id = ?").run(questionId);
   } catch (err) {
@@ -1012,6 +1113,8 @@ function xrplPotInfo(questionId: string): XrplPotInfo | undefined {
   const finish = tx(row.finish_tx);
   const cancel = tx(row.cancel_tx);
   const payout = tx(row.payout_tx);
+  const batch = tx(row.batch_tx);
+  const fee = tx(row.fee_tx);
   return {
     state: row.state,
     amount_xrp: dropsToXrpString(row.amount_drops),
@@ -1025,11 +1128,98 @@ function xrplPotInfo(questionId: string): XrplPotInfo | undefined {
     cancel_url: cancel?.url,
     payout_tx: payout?.hash,
     payout_url: payout?.url,
+    settle_mode: row.settle_mode === "batch" || row.settle_mode === "sequential" ? row.settle_mode : undefined,
+    batch_tx: batch?.hash,
+    batch_url: batch?.url,
+    fee_tx: fee?.hash,
+    fee_url: fee?.url,
+    fee_xrp: row.fee_drops ? dropsToXrpString(row.fee_drops) : undefined,
+    payout_currency: row.payout_currency ?? undefined,
+    payout_amount: row.payout_amount ?? undefined,
   };
 }
 
 const acceptedSubmissions = (observerId: string) =>
   (db().prepare("select count(*) as n from submissions where observer_id = ?").get(observerId) as { n: number }).n;
+
+const metaGet = (key: string) =>
+  (db().prepare("select value from xrpl_meta where key = ?").get(key) as { value: string } | undefined)?.value;
+const metaSet = (key: string, value: string) =>
+  db().prepare("insert into xrpl_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(key, value);
+
+/** The AEYE reputation MPT issuance id: env override, else cached, else found/created on ledger. */
+async function reputationIssuanceId(): Promise<string | undefined> {
+  if (!isXrplConfigured()) return undefined;
+  if (process.env.XRPL_REP_MPT_ID) return process.env.XRPL_REP_MPT_ID;
+  const cached = metaGet("rep_mpt_issuance_id");
+  if (cached) return cached;
+  const id = await ensureReputationIssuance();
+  metaSet("rep_mpt_issuance_id", id);
+  return id;
+}
+
+let reputationChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Mint AEYE reputation MPT for each observer's un-minted accepted answers
+ * (one MPT per accepted submission). Serialized so concurrent calls can't
+ * double-mint; no-op when XRPL isn't configured.
+ */
+export function syncObserverReputation(observerIds: string[]): Promise<void> {
+  const run = reputationChain.then(() => syncObserverReputationInner(observerIds));
+  reputationChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function syncObserverReputationInner(observerIds: string[]): Promise<void> {
+  if (!isXrplConfigured() || observerIds.length === 0) return;
+  const issuanceId = await reputationIssuanceId();
+  if (!issuanceId) return;
+  const repRow = (observerId: string, address: string) =>
+    db()
+      .prepare("select minted from xrpl_reputation where observer_id = ? and address = ?")
+      .get(observerId, address) as { minted: number } | undefined;
+  const grants: { observerId: string; address: string; amount: number }[] = [];
+  for (const observerId of [...new Set(observerIds)]) {
+    const obs = getOrCreateObserver(observerId);
+    const address = obs.xrpl_address;
+    if (!address) continue;
+    const due = acceptedSubmissions(observerId) - (repRow(observerId, address)?.minted ?? 0);
+    if (due <= 0) continue;
+    const status = await observerLedgerStatus(address, issuanceId);
+    if (!status.reputation.opted_in) continue;
+    grants.push({ observerId, address, amount: due });
+  }
+  if (grants.length === 0) return;
+  const results = await mintReputation(issuanceId, grants.map(({ address, amount }) => ({ address, amount })));
+  const now = new Date().toISOString();
+  results.forEach((result, i) => {
+    const grant = grants[i];
+    if (!grant) return;
+    const success = result.result === "tesSUCCESS";
+    db()
+      .prepare(
+        `insert into xrpl_reputation (observer_id, address, minted, last_tx, last_error, updated_at)
+         values (?, ?, ?, ?, ?, ?)
+         on conflict(observer_id, address) do update set
+           minted = minted + excluded.minted,
+           last_tx = excluded.last_tx,
+           last_error = excluded.last_error,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        grant.observerId,
+        grant.address,
+        success ? result.amount : 0,
+        result.hash,
+        success ? null : result.result,
+        now,
+      );
+  });
+}
 
 export type ObserverCredential = {
   enabled: boolean;
@@ -1037,6 +1227,66 @@ export type ObserverCredential = {
   threshold: number;
   credential?: { subject: string; state: "pending" | "issued" | "failed"; tx?: string; url?: string };
 };
+
+export type ObserverXrplStatus = ObserverCredential & {
+  network: "testnet";
+  address?: string;
+  issuer?: string;
+  funded: boolean;
+  xrp_balance?: string;
+  rlusd: { trustline: boolean; balance?: string };
+  reputation: {
+    issuance_id?: string;
+    opted_in: boolean;
+    balance?: string;
+    earned: number;
+    minted: number;
+    explorer_url?: string;
+  };
+};
+
+/** Live XRPL status for the /api/me/xrpl route: wallet, RLUSD line, reputation MPT. */
+export async function observerXrpl(observerId: string): Promise<ObserverXrplStatus> {
+  const base = observerCredential(observerId);
+  const obs = getOrCreateObserver(observerId);
+  const empty: ObserverXrplStatus = {
+    ...base,
+    network: "testnet",
+    address: obs.xrpl_address,
+    funded: false,
+    rlusd: { trustline: false },
+    reputation: { opted_in: false, earned: base.accepted, minted: 0 },
+  };
+  if (!base.enabled) return empty;
+  const issuanceId = await reputationIssuanceId().catch(() => undefined);
+  let issuer: string | undefined;
+  try {
+    issuer = issuerAddress();
+  } catch {}
+  const repRow = obs.xrpl_address
+    ? (db()
+        .prepare("select minted from xrpl_reputation where observer_id = ? and address = ?")
+        .get(observerId, obs.xrpl_address) as { minted: number } | undefined)
+    : undefined;
+  const status = obs.xrpl_address
+    ? await observerLedgerStatus(obs.xrpl_address, issuanceId).catch(() => undefined)
+    : undefined;
+  return {
+    ...empty,
+    issuer,
+    funded: status?.funded ?? false,
+    xrp_balance: status?.xrp_balance,
+    rlusd: status?.rlusd ?? { trustline: false },
+    reputation: {
+      issuance_id: issuanceId,
+      opted_in: status?.reputation.opted_in ?? false,
+      balance: status?.reputation.balance,
+      earned: base.accepted,
+      minted: repRow?.minted ?? 0,
+      explorer_url: issuanceId ? `https://testnet.xrpl.org/mpt/${issuanceId}` : undefined,
+    },
+  };
+}
 
 export function observerCredential(observerId: string): ObserverCredential {
   const obs = getOrCreateObserver(observerId);
