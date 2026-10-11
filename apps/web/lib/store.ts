@@ -667,7 +667,7 @@ export function observerPrizes(observerId: string): ObserverPrize[] {
     .prepare(
       `select q.id as question_id, q.prompt, q.place_label, q.prize_amount, q.payment_tx, q.closes_at,
               q.closed_at, s.captured_at as won_at, t.amount_units, t.to_address, t.state as transfer_state, t.tx as transfer_tx,
-              x.payout_tx as xrpl_tx, x.payout_amount as xrpl_amount, o.evm_address,
+              x.payout_tx as xrpl_tx, x.payout_amount as xrpl_amount, x.question_id as escrow_id, o.evm_address,
               case when t.question_id is not null then 1 else 0 end as has_transfer
          from raffles r
          join submissions s on s.id = r.winner_submission_id
@@ -694,12 +694,14 @@ export function observerPrizes(observerId: string): ObserverPrize[] {
       };
     }
     if (!hasTransfer) {
+      // No ledger row yet: an escrowed pot pays on XRPL; otherwise the AUSD payout row is still being created.
+      const rail = row.escrow_id !== null ? ("xrpl" as const) : ("ausd" as const);
       return {
         question_id: row.question_id as string,
         prompt: row.prompt as string,
         place_label: (row.place_label as string | null) ?? null,
         amount: payoutAmount(potAmount({ id: row.question_id as string, prize_amount: row.prize_amount as number })),
-        rail: "xrpl" as const,
+        rail,
         status: "sending" as const,
         won_at: (row.closed_at as string | null) ?? (row.won_at as string),
       };
