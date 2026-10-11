@@ -5,6 +5,16 @@ import { isLegacyObserverId, signObserverId, verifyObserverCookie } from "./obse
 
 const COOKIE = "aeye_obs";
 
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  };
+}
+
 /**
  * Anonymous observer identity kept in a cookie. Stands in for Supabase magic-link
  * auth until milestone 1 lands. Route handlers only (it may set a cookie).
@@ -17,15 +27,14 @@ export async function currentObserver() {
   const obs = (id && getObserver(id)) || createObserver();
   const signed = signObserverId(obs.id, secret);
   if (raw !== signed) {
-    jar.set(COOKIE, signed, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
+    jar.set(COOKIE, signed, cookieOptions());
   }
   return obs;
+}
+
+export async function setObserverCookie(id: string) {
+  const jar = await cookies();
+  jar.set(COOKIE, signObserverId(id, cookieSecret()), cookieOptions());
 }
 
 /** Read-only lookup for Server Components. */

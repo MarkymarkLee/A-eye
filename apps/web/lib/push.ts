@@ -3,8 +3,11 @@ import webpush from "web-push";
 import type { CreateQuestionInput } from "@a-eye/shared";
 import {
   claimPushSlot,
+  claimWinnerNotification,
   deletePushSubscription,
+  pushSubscriptionsFor,
   pushSubscriptionsNear,
+  winnerNotificationFor,
 } from "./store";
 import { isAllowedPushEndpoint, PUSH_MAX_LOCATION_AGE_MS, PUSH_RADIUS_M, selectPushTargets } from "./push-targets";
 
@@ -14,6 +17,59 @@ export function pushConfig() {
   const subject = process.env.VAPID_SUBJECT;
   if (!publicKey || !privateKey || !subject) return null;
   return { publicKey, privateKey, subject };
+}
+
+/** Send one prize notification to the winning observer. The database claim makes retries idempotent. */
+export async function notifyWinner(
+  questionId: string,
+  deps: { send: Send } = { send: webpush.sendNotification },
+): Promise<{ sent: number; failed: number }> {
+  try {
+    if (!claimWinnerNotification(questionId)) return { sent: 0, failed: 0 };
+    const winner = winnerNotificationFor(questionId);
+    if (!winner?.is_real_money) return { sent: 0, failed: 0 };
+    const cfg = pushConfig();
+    if (!cfg) return { sent: 0, failed: 0 };
+    const subscriptions = pushSubscriptionsFor(winner.observer_id).filter((sub) => isAllowedPushEndpoint(sub.endpoint));
+    const amount = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(winner.amount);
+    const body = winner.place_label
+      ? `You won ${amount} test dollars at ${winner.place_label} — tap to collect`
+      : `You won ${amount} test dollars — tap to collect`;
+    const payload = JSON.stringify({
+      title: "You won!",
+      body,
+      url: `/me?prize=${encodeURIComponent(questionId)}`,
+      tag: `won-${questionId}`,
+    });
+    const results = await Promise.allSettled(
+      subscriptions.map((sub) =>
+        deps.send(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+          {
+            vapidDetails: { subject: cfg.subject, publicKey: cfg.publicKey, privateKey: cfg.privateKey },
+            TTL: 24 * 60 * 60,
+            urgency: "high",
+          },
+        ),
+      ),
+    );
+    let sent = 0;
+    let failed = 0;
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        sent += 1;
+      } else {
+        failed += 1;
+        const statusCode = (result.reason as { statusCode?: number })?.statusCode;
+        if (statusCode === 404 || statusCode === 410) deletePushSubscription(subscriptions[index]!.endpoint);
+      }
+    });
+    return { sent, failed };
+  } catch (err) {
+    console.warn("[push] notifyWinner failed:", err);
+    return { sent: 0, failed: 0 };
+  }
 }
 
 const minIntervalMs = () => Math.max(0, Number(process.env.PUSH_MIN_INTERVAL_SECONDS ?? 180)) * 1000;
