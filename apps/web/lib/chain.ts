@@ -5,13 +5,18 @@ import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { facilitatorFromEnv } from "./x402";
 import {
+  BaseError,
   createPublicClient,
   createWalletClient,
+  encodeFunctionData,
   erc20Abi,
   getAddress,
   http,
   isAddress,
+  keccak256,
   nonceManager,
+  NonceTooLowError,
+  TransactionReceiptNotFoundError,
   type Address,
   type Hex,
 } from "viem";
@@ -74,27 +79,84 @@ export function ethBalance(addr: string): Promise<bigint> {
   return publicClient().getBalance({ address: getAddress(addr) });
 }
 
-/** Send AUSD from the treasury (raffle payouts, refunds) and wait for 1 confirmation. */
-export async function transferAusd(to: string, amountUnits: bigint): Promise<Hex> {
+/**
+ * Send AUSD from the treasury (raffle payouts, refunds) and wait for 1 confirmation.
+ * The transaction is signed first and `hooks.onSigned` runs synchronously with its
+ * hash + raw bytes before anything is broadcast, so the caller can persist both;
+ * if onSigned throws, the transaction is never broadcast.
+ */
+export async function transferAusd(
+  to: string,
+  amountUnits: bigint,
+  hooks?: { onSigned?: (tx: { hash: Hex; raw: Hex }) => void },
+): Promise<Hex> {
   if (!isAddress(to)) throw new Error(`Invalid recipient address: ${to}`);
   if (amountUnits <= BigInt(0)) throw new Error("Amount must be positive");
   const account = treasuryAccount();
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(rpcUrl()) });
-  const hash = await wallet.writeContract({
-    address: AUSD.address,
+  const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: "transfer",
     args: [getAddress(to), amountUnits],
   });
-  const receipt = await publicClient().waitForTransactionReceipt({ hash, confirmations: 1 });
+  const request = await wallet.prepareTransactionRequest({ to: AUSD.address, data });
+  const raw = await wallet.signTransaction(request);
+  const hash = keccak256(raw);
+  hooks?.onSigned?.({ hash, raw });
+  await publicClient().sendRawTransaction({ serializedTransaction: raw });
+  const receipt = await publicClient().waitForTransactionReceipt({ hash, confirmations: 1, timeout: 60_000 });
   if (receipt.status !== "success") throw new Error(`AUSD transfer reverted: ${hash}`);
   return hash;
 }
 
+/** On-chain status of a previously broadcast AUSD transfer hash. */
+export async function ausdTxStatus(hash: Hex): Promise<"success" | "reverted" | "missing"> {
+  try {
+    const receipt = await publicClient().getTransactionReceipt({ hash });
+    return receipt.status === "success" ? "success" : "reverted";
+  } catch (err) {
+    if (err instanceof TransactionReceiptNotFoundError) return "missing";
+    if (err instanceof BaseError && err.name === "TransactionReceiptNotFoundError") return "missing";
+    throw err;
+  }
+}
+
+/** Re-broadcast a persisted raw transaction that may never have reached the mempool. */
+export async function rebroadcastRawTx(raw: Hex): Promise<"ok" | "nonce_used"> {
+  try {
+    await publicClient().sendRawTransaction({ serializedTransaction: raw });
+    return "ok";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof NonceTooLowError || /nonce too low/i.test(message)) return "nonce_used";
+    if (/already known|known transaction|already imported/i.test(message)) return "ok";
+    throw err;
+  }
+}
+
+export class FacilitatorNotSubmittedError extends Error {}
+
+const AUTHORIZATION_USED_EVENT = {
+  type: "event",
+  name: "AuthorizationUsed",
+  inputs: [
+    { name: "authorizer", type: "address", indexed: true },
+    { name: "nonce", type: "bytes32", indexed: true },
+  ],
+} as const;
+
+/**
+ * Gasless AUSD payout: the treasury signs an EIP-3009 authorization and the x402
+ * facilitator settles it. Errors before client.settle() is invoked are rethrown as
+ * FacilitatorNotSubmittedError (nothing was submitted; a direct rail send is safe).
+ * `hooks.onAuthorized` runs synchronously once the authorization exists — persist it;
+ * after `validBefore` passes an unused authorization can never land.
+ */
 export async function transferAusdViaFacilitator(
   to: string,
   amountUnits: bigint,
   facilitator?: FacilitatorClient,
+  hooks?: { onAuthorized?: (a: { nonce: Hex; validBefore: number }) => void },
 ): Promise<Hex> {
   if (!isAddress(to)) throw new Error(`Invalid recipient address: ${to}`);
   if (amountUnits <= BigInt(0)) throw new Error("Amount must be positive");
@@ -107,21 +169,32 @@ export async function transferAusdViaFacilitator(
     maxTimeoutSeconds: 300,
     extra: { ...AUSD.eip712 },
   };
-  const partial = await new ExactEvmScheme(treasuryAccount()).createPaymentPayload(2, requirements);
-  const payload: PaymentPayload = {
-    ...partial,
-    accepted: requirements,
-    resource: {
-      url: `${process.env.A_EYE_PUBLIC_URL ?? "https://a-eye-1zsv.onrender.com"}/payouts`,
-      description: "A-eye treasury payout",
-      mimeType: "application/json",
-    },
-  };
-  const client = facilitator ?? facilitatorFromEnv();
-  const verified = await client.verify(payload, requirements);
-  if (!verified.isValid) {
-    const reason = [verified.invalidReason, verified.invalidMessage].filter(Boolean).join(": ");
-    throw new Error(reason || "Facilitator rejected treasury payout");
+  let client: FacilitatorClient;
+  let payload: PaymentPayload;
+  try {
+    const partial = await new ExactEvmScheme(treasuryAccount()).createPaymentPayload(2, requirements);
+    const authorization = (
+      partial.payload as { authorization: { nonce: Hex; validBefore: number | bigint | string } }
+    ).authorization;
+    hooks?.onAuthorized?.({ nonce: authorization.nonce, validBefore: Number(authorization.validBefore) });
+    payload = {
+      ...partial,
+      accepted: requirements,
+      resource: {
+        url: `${process.env.A_EYE_PUBLIC_URL ?? "https://a-eye-1zsv.onrender.com"}/payouts`,
+        description: "A-eye treasury payout",
+        mimeType: "application/json",
+      },
+    };
+    client = facilitator ?? facilitatorFromEnv();
+    const verified = await client.verify(payload, requirements);
+    if (!verified.isValid) {
+      const reason = [verified.invalidReason, verified.invalidMessage].filter(Boolean).join(": ");
+      throw new Error(reason || "Facilitator rejected treasury payout");
+    }
+  } catch (err) {
+    if (err instanceof FacilitatorNotSubmittedError) throw err;
+    throw new FacilitatorNotSubmittedError(err instanceof Error ? err.message : String(err));
   }
   const settled = await client.settle(payload, requirements);
   if (!settled.success) {
@@ -129,4 +202,43 @@ export async function transferAusdViaFacilitator(
     throw new Error(reason || "Facilitator failed to settle treasury payout");
   }
   return settled.transaction as Hex;
+}
+
+/** Whether an EIP-3009 authorization nonce from the treasury has been used on-chain. */
+export function ausdAuthorizationUsed(nonce: Hex): Promise<boolean> {
+  return publicClient().readContract({
+    address: AUSD.address,
+    abi: [
+      {
+        type: "function",
+        name: "authorizationState",
+        stateMutability: "view",
+        inputs: [
+          { name: "authorizer", type: "address" },
+          { name: "nonce", type: "bytes32" },
+        ],
+        outputs: [{ name: "", type: "bool" }],
+      },
+    ],
+    functionName: "authorizationState",
+    args: [treasuryAccount().address, nonce],
+  });
+}
+
+/** Find the tx that consumed a treasury authorization nonce, scanning recent blocks. */
+export async function findAuthorizationTx(nonce: Hex, fromBlock: bigint | null): Promise<Hex | undefined> {
+  const latest = await publicClient().getBlockNumber();
+  const start = fromBlock ?? (latest > 5000n ? latest - 5000n : 0n);
+  const logs = await publicClient().getLogs({
+    address: AUSD.address,
+    event: AUTHORIZATION_USED_EVENT,
+    args: { authorizer: treasuryAccount().address, nonce },
+    fromBlock: start < 0n ? 0n : start,
+    toBlock: latest,
+  });
+  return logs[0]?.transactionHash;
+}
+
+export function currentBlockNumber(): Promise<bigint> {
+  return publicClient().getBlockNumber();
 }
