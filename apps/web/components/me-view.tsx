@@ -237,7 +237,6 @@ export function MeView() {
                   <p id="xrpl-help" className="text-[13px] text-muted">
                     Starts with r. Also earns you a Verified Observer badge after {me.xrpl?.threshold ?? 3} answers.
                   </p>
-
                 </div>
               )}
               {err && (

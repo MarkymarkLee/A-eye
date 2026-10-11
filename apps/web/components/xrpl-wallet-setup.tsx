@@ -294,8 +294,8 @@ export function XrplWalletSetup({ badge }: { badge: React.ReactNode }) {
                   </a>
                 )}
               </>
-            ) : hasSeed && status.rlusd.trustline ? (
-              "You're opted in."
+            ) : hasSeed ? (
+              "Tap Opt in to start collecting a point for every accepted answer."
             ) : (
               "Points are minted to your wallet for each accepted answer."
             )
