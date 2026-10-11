@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { SubmissionFields } from "@a-eye/shared";
 import { checkPresence } from "@/lib/geo";
 import { currentObserver } from "@/lib/observer";
+import { parseSubmissionFields } from "@/lib/submission-form";
 import { addSubmission, getQuestionRow } from "@/lib/store";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -13,7 +13,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Expected multipart form data." }, { status: 400 });
-  const fields = SubmissionFields.safeParse(Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string")));
+  const fields = parseSubmissionFields(form);
   if (!fields.success) return NextResponse.json({ error: "Missing location, time or answer." }, { status: 400 });
 
   const image = form.get("image");

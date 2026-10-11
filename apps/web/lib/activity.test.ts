@@ -153,7 +153,7 @@ describe("activity feed", () => {
       amount: 2.25,
       to_label: paidObserver.display_name,
     });
-    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(`0x${"22".repeat(20)}`, BigInt(2_250_000));
+    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(`0x${"22".repeat(20)}`, BigInt(2_250_000), expect.anything());
 
     expect(paidFeed.counters.questions).toBe(before.counters.questions + 2);
     expect(paidFeed.counters.verified_photos).toBe(before.counters.verified_photos + 4);

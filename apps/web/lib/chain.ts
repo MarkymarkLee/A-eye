@@ -1,12 +1,17 @@
 import { AUSD } from "@a-eye/shared";
 import {
+  BaseError,
   createPublicClient,
   createWalletClient,
+  encodeFunctionData,
   erc20Abi,
   getAddress,
   http,
   isAddress,
+  keccak256,
   nonceManager,
+  NonceTooLowError,
+  TransactionReceiptNotFoundError,
   type Address,
   type Hex,
 } from "viem";
@@ -69,19 +74,57 @@ export function ethBalance(addr: string): Promise<bigint> {
   return publicClient().getBalance({ address: getAddress(addr) });
 }
 
-/** Send AUSD from the treasury (raffle payouts, refunds) and wait for 1 confirmation. */
-export async function transferAusd(to: string, amountUnits: bigint): Promise<Hex> {
+/**
+ * Send AUSD from the treasury (raffle payouts, refunds) and wait for 1 confirmation.
+ * The transaction is signed first and `hooks.onSigned` runs synchronously with its
+ * hash + raw bytes before anything is broadcast, so the caller can persist both;
+ * if onSigned throws, the transaction is never broadcast.
+ */
+export async function transferAusd(
+  to: string,
+  amountUnits: bigint,
+  hooks?: { onSigned?: (tx: { hash: Hex; raw: Hex }) => void },
+): Promise<Hex> {
   if (!isAddress(to)) throw new Error(`Invalid recipient address: ${to}`);
   if (amountUnits <= BigInt(0)) throw new Error("Amount must be positive");
   const account = treasuryAccount();
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(rpcUrl()) });
-  const hash = await wallet.writeContract({
-    address: AUSD.address,
+  const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: "transfer",
     args: [getAddress(to), amountUnits],
   });
-  const receipt = await publicClient().waitForTransactionReceipt({ hash, confirmations: 1 });
+  const request = await wallet.prepareTransactionRequest({ to: AUSD.address, data });
+  const raw = await wallet.signTransaction(request);
+  const hash = keccak256(raw);
+  hooks?.onSigned?.({ hash, raw });
+  await publicClient().sendRawTransaction({ serializedTransaction: raw });
+  const receipt = await publicClient().waitForTransactionReceipt({ hash, confirmations: 1, timeout: 60_000 });
   if (receipt.status !== "success") throw new Error(`AUSD transfer reverted: ${hash}`);
   return hash;
+}
+
+/** On-chain status of a previously broadcast AUSD transfer hash. */
+export async function ausdTxStatus(hash: Hex): Promise<"success" | "reverted" | "missing"> {
+  try {
+    const receipt = await publicClient().getTransactionReceipt({ hash });
+    return receipt.status === "success" ? "success" : "reverted";
+  } catch (err) {
+    if (err instanceof TransactionReceiptNotFoundError) return "missing";
+    if (err instanceof BaseError && err.name === "TransactionReceiptNotFoundError") return "missing";
+    throw err;
+  }
+}
+
+/** Re-broadcast a persisted raw transaction that may never have reached the mempool. */
+export async function rebroadcastRawTx(raw: Hex): Promise<"ok" | "nonce_used"> {
+  try {
+    await publicClient().sendRawTransaction({ serializedTransaction: raw });
+    return "ok";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof NonceTooLowError || /nonce too low/i.test(message)) return "nonce_used";
+    if (/already known|known transaction|already imported/i.test(message)) return "ok";
+    throw err;
+  }
 }

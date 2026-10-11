@@ -109,7 +109,7 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
   it("refunds the payer when a paid question expires without enough answers", async () => {
     const { body } = await askPaid();
     await store.closeNow(body.question_id);
-    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(agent.address, BigInt(2_500_000));
+    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(agent.address, BigInt(2_500_000), expect.anything());
     expect((await store.getResults(body.question_id, "http://a-eye.test"))!.status).toBe("expired");
   });
 
@@ -130,7 +130,7 @@ describe("x402-paid POST /api/questions + settlement payouts", () => {
       captured_at: new Date().toISOString(),
     });
     expect(sub).toMatchObject({ ok: true, closed: true });
-    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(winner, BigInt(2_250_000));
+    expect(transferAusd).toHaveBeenCalledExactlyOnceWith(winner, BigInt(2_250_000), expect.anything());
     const results = (await store.getResults(body.question_id, "http://a-eye.test"))!;
     expect(results.status).toBe("settled");
     expect(results.raffle.payout_tx).toBe(PAYOUT_TX);
