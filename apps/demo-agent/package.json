@@ -1,0 +1,26 @@
+{
+  "name": "@a-eye/demo-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ask": "tsx src/cli.ts ask",
+    "oracle": "tsx src/cli.ts oracle",
+    "mock": "tsx src/mock-api.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@gemini-markets/sdk": "0.1.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "openai": "^6.23.0",
+    "tsx": "^4.21.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
