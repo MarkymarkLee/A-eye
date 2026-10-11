@@ -6,6 +6,8 @@ import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Crosshair, MapPinSimpleArea } from "@phosphor-icons/react";
 import type { QuestionSummary } from "@a-eye/shared";
 import { useLocation } from "@/hooks/use-location";
+import { InstallPrompt } from "./install-prompt";
+import { PushOptIn } from "./push-opt-in";
 import { formatDistance } from "@/lib/geo";
 import { timeLeft } from "@/lib/time";
 
@@ -68,6 +70,8 @@ export function NearbyView() {
         </p>
 
         <LocationNotice state={loc} />
+        <InstallPrompt />
+        <PushOptIn fix={fix} />
         {error && <p className="mt-4 text-sm text-bad">{error}</p>}
 
         <div className="mt-6">

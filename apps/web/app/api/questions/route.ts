@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CreateQuestionInput } from "@a-eye/shared";
 import { startEnrichment } from "@/lib/enrich";
+import { startNearbyPush } from "@/lib/push";
 import { allOpenQuestions, createQuestion, getResults, nearbyQuestions } from "@/lib/store";
 import { originOf } from "@/lib/origin";
 import { paymentsEnabled, prizeUnits, questionPayTo, sendFromTreasury } from "@/lib/payments";
@@ -22,7 +23,7 @@ const createPaidQuestion = (payTo: string) =>
   withX402Payment<unknown>(
     async (req, payment) => {
       const parsed = CreateQuestionInput.parse(await req.json());
-      const id = createQuestion(parsed, payment.payer, { payer: payment.payer, tx: payment.txHash });
+      const id = createQuestion(parsed, payment.payer, { payer: payment.payer, tx: payment.txHash }, originOf(req));
       return created(req, id, payment.txHash, parsed);
     },
     {
@@ -55,12 +56,13 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid question", issues: parsed.error.issues }, { status: 400 });
   }
-  const id = createQuestion(parsed.data, req.headers.get("x-a-eye-agent")?.slice(0, 64) || undefined);
+  const id = createQuestion(parsed.data, req.headers.get("x-a-eye-agent")?.slice(0, 64) || undefined, undefined, originOf(req));
   return created(req, id, null, parsed.data);
 }
 
 async function created(req: Request, id: string, paymentTx: string | null, input: Parameters<typeof createQuestion>[0]) {
   startEnrichment(id, input);
+  startNearbyPush(id, input);
   const results = await getResults(id, originOf(req));
   return NextResponse.json(
     { question_id: id, gallery_url: results!.gallery_url, seed_commit: results!.raffle.seed_commit, payment_tx: paymentTx },

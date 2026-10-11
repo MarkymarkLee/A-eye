@@ -18,6 +18,7 @@ import { drawWinner, latestBlock, newSeed, sha256Hex } from "./raffle";
 import { prizeUnits, sendFromTreasury, winnerPayoutUnits } from "./payments";
 import { imageUrl, putImage } from "./storage";
 import { tally } from "./tally";
+import { postWebhook } from "./webhook";
 
 /*
  * Local SQLite database (node:sqlite, no native build). Tables follow
@@ -49,6 +50,9 @@ type QuestionRow = {
   seed_commit: string;
   web_baseline: string | null;
   market_ref: string | null;
+  webhook_url: string | null;
+  webhook_origin: string | null;
+  webhook_state: string | null;
   closed_at: string | null;
 };
 
@@ -114,7 +118,10 @@ create table if not exists questions (
   payer_address text,
   payment_tx text,
   refund_tx text,
-  market_ref text
+  market_ref text,
+  webhook_url text,
+  webhook_origin text,
+  webhook_state text
 );
 create index if not exists questions_status_idx on questions(status, closes_at);
 create index if not exists questions_geo_idx on questions(lat, lng);
@@ -142,6 +149,18 @@ create table if not exists raffles (
   winner_submission_id text,
   payout_tx text
 );
+create table if not exists push_subscriptions (
+  endpoint text primary key,
+  observer_id text not null references observers(id),
+  p256dh text not null,
+  auth text not null,
+  lat real,
+  lng real,
+  location_at text,
+  last_push_at text,
+  created_at text not null
+);
+create index if not exists push_subscriptions_geo_idx on push_subscriptions(lat, lng);
 `;
 
 const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
@@ -149,7 +168,7 @@ const g = globalThis as unknown as { __aeyeDb?: DatabaseSync };
 /** Columns added after the first deploy; `create table if not exists` won't add them to an existing file. */
 function migrate(conn: DatabaseSync) {
   const cols = new Set((conn.prepare("pragma table_info(questions)").all() as { name: string }[]).map((c) => c.name));
-  for (const col of ["payer_address", "payment_tx", "refund_tx", "market_ref"]) {
+  for (const col of ["payer_address", "payment_tx", "refund_tx", "market_ref", "webhook_url", "webhook_origin", "webhook_state"]) {
     if (!cols.has(col)) conn.exec(`alter table questions add column ${col} text`);
   }
   if (!cols.has("closed_at")) conn.exec("alter table questions add column closed_at text");
@@ -242,6 +261,7 @@ export function createQuestion(
   input: CreateQuestionInput,
   agentLabel = "unpaid-dev-agent",
   payment?: { payer: string; tx: string | null },
+  origin?: string,
 ) {
   const { seed: s, commit } = newSeed();
   const now = Date.now();
@@ -250,8 +270,8 @@ export function createQuestion(
     .prepare(
       `insert into questions (id, agent_label, prompt, options, allow_free_text, place_label, lat, lng, radius_m,
          prize_amount, currency, min_responses, max_responses, closes_at, created_at, status, seed, seed_commit,
-         payer_address, payment_tx, market_ref)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
+         payer_address, payment_tx, market_ref, webhook_url, webhook_origin)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUSD', ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -273,6 +293,8 @@ export function createQuestion(
       payment?.payer ?? null,
       payment?.tx ?? null,
       input.market_ref ? JSON.stringify(input.market_ref) : null,
+      input.webhook_url ?? null,
+      origin ?? null,
     );
   return id;
 }
@@ -352,6 +374,10 @@ export async function allOpenQuestions() {
 
 export async function getResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   await settleDue();
+  return buildResults(id, origin);
+}
+
+async function buildResults(id: string, origin: string): Promise<QuestionResults | undefined> {
   const q = questionById(id);
   if (!q) return undefined;
   const options = JSON.parse(q.options) as string[];
@@ -476,13 +502,85 @@ export function getQuestionRow(id: string) {
   return q ? { id: q.id, lat: q.lat, lng: q.lng, radius_m: q.radius_m } : undefined;
 }
 
+// ---------- push subscriptions ----------
+
+export type PushSubscriptionRecord = {
+  endpoint: string;
+  observer_id: string;
+  p256dh: string;
+  auth: string;
+  lat: number | null;
+  lng: number | null;
+  location_at: string | null;
+  last_push_at: string | null;
+  created_at: string;
+};
+
+/** Upsert on endpoint. A new lat/lng is stored rounded to 3 decimals (~110 m); omitting it keeps the old fix. */
+export function savePushSubscription(input: {
+  observerId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  lat?: number;
+  lng?: number;
+}): PushSubscriptionRecord {
+  const now = new Date().toISOString();
+  const hasLoc = input.lat !== undefined && input.lng !== undefined;
+  const lat = hasLoc ? Math.round(input.lat! * 1000) / 1000 : null;
+  const lng = hasLoc ? Math.round(input.lng! * 1000) / 1000 : null;
+  db()
+    .prepare(
+      `insert into push_subscriptions (endpoint, observer_id, p256dh, auth, lat, lng, location_at, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict(endpoint) do update set
+         observer_id = excluded.observer_id,
+         p256dh = excluded.p256dh,
+         auth = excluded.auth,
+         lat = coalesce(excluded.lat, push_subscriptions.lat),
+         lng = coalesce(excluded.lng, push_subscriptions.lng),
+         location_at = coalesce(excluded.location_at, push_subscriptions.location_at)`,
+    )
+    .run(input.endpoint, input.observerId, input.p256dh, input.auth, lat, lng, hasLoc ? now : null, now);
+  return db().prepare("select * from push_subscriptions where endpoint = ?").get(input.endpoint) as PushSubscriptionRecord;
+}
+
+export function deletePushSubscription(endpoint: string): boolean {
+  return db().prepare("delete from push_subscriptions where endpoint = ?").run(endpoint).changes === 1;
+}
+
+/** SQL bounding-box prefilter (same math as nearbyQuestions); exact distance filtering is selectPushTargets. */
+export function pushSubscriptionsNear(lat: number, lng: number, radiusM: number): PushSubscriptionRecord[] {
+  const dLat = radiusM / 1000 / 111.32;
+  const dLng = radiusM / 1000 / (111.32 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  return db()
+    .prepare(
+      "select * from push_subscriptions where lat is not null and lat between ? and ? and lng between ? and ?",
+    )
+    .all(lat - dLat, lat + dLat, lng - dLng, lng + dLng) as PushSubscriptionRecord[];
+}
+
+/** Rate limit + no double send: one atomic UPDATE claims the slot for `now`. */
+export function claimPushSlot(endpoint: string, nowMs: number, minIntervalMs: number): boolean {
+  const res = db()
+    .prepare(
+      "update push_subscriptions set last_push_at = ? where endpoint = ? and (last_push_at is null or last_push_at <= ?)",
+    )
+    .run(new Date(nowMs).toISOString(), endpoint, new Date(nowMs - minIntervalMs).toISOString());
+  return res.changes === 1;
+}
+
 // ---------- settle ----------
 
-export async function settleDue() {
+export async function settleDue(): Promise<number> {
   const due = db()
     .prepare("select id from questions where status = 'open' and closes_at <= ?")
     .all(new Date().toISOString()) as { id: string }[];
-  for (const { id } of due) await settle(id);
+  let settled = 0;
+  for (const { id } of due) {
+    if (await settle(id)) settled += 1;
+  }
+  return settled;
 }
 
 export async function closeNow(id: string) {
@@ -507,6 +605,7 @@ async function settle(id: string) {
       const refund = await sendFromTreasury("refund", q.payer_address, prizeUnits(q.prize_amount));
       if (refund) db().prepare("update questions set refund_tx = ? where id = ?").run(refund, id);
     }
+    trackWebhook(id);
     return true;
   }
   const block = await latestBlock();
@@ -520,7 +619,55 @@ async function settle(id: string) {
     .run(id, q.seed, entropy, block?.number ?? null, draw?.winner ?? null);
   db().prepare("update questions set status = 'settled' where id = ?").run(id);
   if (q.payment_tx && draw?.winner) await payWinner(id, draw.winner, q.prize_amount);
+  trackWebhook(id);
   return true;
+}
+
+const pendingWebhooks = new Set<Promise<void>>();
+
+function trackWebhook(id: string) {
+  const pending = deliverWebhook(id);
+  pendingWebhooks.add(pending);
+  void pending.then(
+    () => pendingWebhooks.delete(pending),
+    () => pendingWebhooks.delete(pending),
+  );
+}
+
+export async function flushWebhooks(): Promise<void> {
+  await Promise.all([...pendingWebhooks]);
+}
+
+async function deliverWebhook(id: string): Promise<void> {
+  try {
+    const row = db()
+      .prepare("select webhook_url, webhook_origin from questions where id = ?")
+      .get(id) as { webhook_url: string | null; webhook_origin: string | null } | undefined;
+    if (!row?.webhook_url) return;
+    const claim = db()
+      .prepare(
+        "update questions set webhook_state = 'sending' where id = ? and webhook_url is not null and webhook_state is null",
+      )
+      .run(id);
+    if (claim.changes !== 1) return;
+
+    const payload = await buildResults(
+      id,
+      row.webhook_origin ?? process.env.A_EYE_PUBLIC_URL ?? "http://localhost:3000",
+    );
+    if (!payload) throw new Error("question results not found");
+    const result = await postWebhook(row.webhook_url, payload);
+    db()
+      .prepare("update questions set webhook_state = ? where id = ?")
+      .run(result.ok ? "delivered" : "failed", id);
+    if (!result.ok) console.warn(`[webhook] delivery failed for ${id}: ${(result.error ?? "unknown error").replace(/\s+/g, " ")}`);
+  } catch (err) {
+    try {
+      db().prepare("update questions set webhook_state = 'failed' where id = ? and webhook_state = 'sending'").run(id);
+    } catch {}
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[webhook] delivery failed for ${id}: ${message.replace(/\s+/g, " ")}`);
+  }
 }
 
 /** Treasury pays the raffle winner (prize minus the platform fee) to their EVM payout address. */
