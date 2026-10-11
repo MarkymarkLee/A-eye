@@ -6,14 +6,14 @@ import {
 } from "@x402/core/http";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { AEyeApi, PaymentRequiredError, type FetchLike } from "../src/api.js";
+import { AEyeApi, PaymentRequiredError, type FetchLike } from "../src/api";
 import {
   agentPrivateKey,
   createPayingFetch,
   paymentFromEnv,
   paymentResponseFromHeaders,
   paymentTxFromHeaders,
-} from "../src/payments.js";
+} from "../src/payments";
 
 const BASE = "http://a-eye.test";
 const TX = `0x${"cd".repeat(32)}`;

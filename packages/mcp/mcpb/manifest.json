@@ -9,7 +9,10 @@
     "name": "Peyton Li"
   },
   "homepage": "https://a-eye-1zsv.onrender.com/agents",
-  "repository": "https://github.com/PeytonLi/A-eye",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PeytonLi/A-eye"
+  },
   "icon": "icon.png",
   "server": {
     "type": "node",

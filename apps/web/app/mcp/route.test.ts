@@ -72,8 +72,13 @@ const questionArgs = {
   max_responses: 1,
 };
 
-function firstText(result: { content: { type: string; text?: string }[] }) {
-  return result.content.find((block) => block.type === "text")?.text ?? "";
+function firstText(result: unknown) {
+  if (!result || typeof result !== "object" || !("content" in result) || !Array.isArray(result.content)) return "";
+  const block = result.content.find(
+    (item): item is { type: "text"; text: string } =>
+      Boolean(item && typeof item === "object" && "type" in item && item.type === "text" && "text" in item && typeof item.text === "string"),
+  );
+  return block?.text ?? "";
 }
 
 describe("hosted /mcp endpoint", () => {
@@ -100,7 +105,7 @@ describe("hosted /mcp endpoint", () => {
       name: "get_question_results",
       arguments: { question_id: question.question_id },
     });
-    expect(JSON.parse(firstText(results))).toMatchObject({ question_id: question.question_id });
+    expect(JSON.parse(firstText(results))).toMatchObject({ id: question.question_id });
     const mineA = await agentA.client.callTool({ name: "list_my_questions" });
     expect(JSON.parse(firstText(mineA)).map((item: { id: string }) => item.id)).toContain(question.question_id);
 
@@ -172,7 +177,7 @@ describe("hosted /mcp endpoint", () => {
     expect(result.paymentResponse).toMatchObject({ success: true, transaction: PAYMENT_TX });
     expect(facilitatorCalls.filter((call) => call === "/settle")).toHaveLength(1);
     const stored = await store.questionsByAgent(agentIdentity, PUBLIC_ORIGIN);
-    const questionId = JSON.parse(result.content[0]!.text!) as { question_id: string };
+    const questionId = JSON.parse(firstText(result)) as { question_id: string };
     expect(stored.map((question) => question.id)).toContain(questionId.question_id);
     const peek = await payingClient.callTool("peek_results", {
       question_id: questionId.question_id,

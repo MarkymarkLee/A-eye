@@ -8,8 +8,8 @@ import { wrapMCPClientWithPayment } from "@x402/mcp";
 import { x402Client } from "@x402/fetch";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { AEyeApi, type FetchLike } from "../src/api.js";
-import { createServer } from "../src/server.js";
+import { AEyeApi, type FetchLike } from "../src/api";
+import { createServer } from "../src/server";
 
 const BASE = "http://a-eye.test";
 const PEEK_TX = `0x${"ab".repeat(32)}`;
@@ -229,7 +229,15 @@ describe("a-eye MCP server", () => {
   it("sends MCP payment metadata as PAYMENT-SIGNATURE and returns the settle receipt in metadata", async () => {
     const payload = {
       x402Version: 2,
-      accepted: { scheme: "exact", network: X402_NETWORK, asset: AUSD.address, amount: "2500000", payTo: "0x1234" },
+      accepted: {
+        scheme: "exact",
+        network: X402_NETWORK,
+        asset: AUSD.address,
+        amount: "2500000",
+        payTo: "0x1234",
+        maxTimeoutSeconds: 300,
+        extra: { ...AUSD.eip712 },
+      },
       payload: { authorization: { from: "0x1234" }, signature: "test" },
     } as PaymentPayload;
     const receipt = { success: true, transaction: `0x${"ab".repeat(32)}`, network: X402_NETWORK, payer: "0x1234" };
@@ -253,7 +261,15 @@ describe("a-eye MCP server", () => {
   it("passes MCP payment metadata to peek_results and returns the settle receipt", async () => {
     const payload = {
       x402Version: 2,
-      accepted: { scheme: "exact", network: X402_NETWORK, asset: AUSD.address, amount: "20000", payTo: "0x1234" },
+      accepted: {
+        scheme: "exact",
+        network: X402_NETWORK,
+        asset: AUSD.address,
+        amount: "20000",
+        payTo: "0x1234",
+        maxTimeoutSeconds: 300,
+        extra: { ...AUSD.eip712 },
+      },
       payload: { authorization: { from: "0x1234" }, signature: "test" },
     } as PaymentPayload;
     const receipt = { success: true, transaction: PEEK_TX, network: X402_NETWORK, payer: "0x1234" };

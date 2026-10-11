@@ -3,7 +3,7 @@ import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@
 import type { SettleResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
-import type { FetchLike } from "./api.js";
+import type { FetchLike } from "./api";
 
 export const DEFAULT_MAX_PAYMENT_UNITS = 25_000_000n;
 

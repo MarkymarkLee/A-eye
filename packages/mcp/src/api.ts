@@ -7,8 +7,8 @@ import type {
 } from "@a-eye/shared";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequired, SettleResponse } from "@x402/core/types";
-import { paymentResponseFromHeaders, paymentTxFromHeaders } from "./payments.js";
-import { downscaleImage } from "./images.js";
+import { paymentResponseFromHeaders, paymentTxFromHeaders } from "./payments";
+import { downscaleImage } from "./images";
 
 export class ApiError extends Error {
   constructor(

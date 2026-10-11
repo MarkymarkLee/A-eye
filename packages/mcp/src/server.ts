@@ -1,9 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { CreateQuestionInput, askQuestionShape, type QuestionResults } from "@a-eye/shared";
-import type { PaymentPayload } from "@x402/core/types";
+import type { PaymentPayload, PaymentRequired } from "@x402/core/types";
 import { z } from "zod";
-import { ApiError, PaymentRequiredError, type AEyeApi } from "./api.js";
+import { ApiError, PaymentRequiredError, type AEyeApi } from "./api";
 
 const json = (value: unknown): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
@@ -14,20 +14,14 @@ const fail = (err: unknown): CallToolResult => ({
   content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
 });
 
-function paymentRequiredResult(err: PaymentRequiredError): CallToolResult {
-  const amount = err.paymentRequired?.accepts[0];
-  const units =
-    amount && "amount" in amount
-      ? amount.amount
-      : amount && "maxAmountRequired" in amount
-        ? amount.maxAmountRequired
-        : "0";
+function paymentRequiredResult(paymentRequired: PaymentRequired): CallToolResult {
+  const units = paymentRequired.accepts[0]?.amount ?? "0";
   const hint = `Needs an x402 payment of ${Number(units) / 1_000_000} AUSD on Base Sepolia (eip155:84532). Use an x402-aware MCP client (@x402/mcp) that retries with _meta["x402/payment"], or run the a-eye-mcp stdio server with AGENT_PRIVATE_KEY.`;
   return {
     isError: true,
-    structuredContent: err.paymentRequired,
+    structuredContent: paymentRequired,
     content: [
-      { type: "text", text: JSON.stringify(err.paymentRequired) },
+      { type: "text", text: JSON.stringify(paymentRequired) },
       { type: "text", text: hint },
     ],
   };
@@ -107,7 +101,7 @@ export function createServer(
         return json(await api.askQuestion(CreateQuestionInput.parse(args)));
       } catch (err) {
         if (mcpPayments && err instanceof PaymentRequiredError && err.paymentRequired) {
-          return paymentRequiredResult(err);
+          return paymentRequiredResult(err.paymentRequired);
         }
         return fail(err);
       }
@@ -165,7 +159,7 @@ export function createServer(
         return await resultsContent(api, results, include_images, maxImages, payment);
       } catch (err) {
         if (mcpPayments && err instanceof PaymentRequiredError && err.paymentRequired) {
-          return paymentRequiredResult(err);
+          return paymentRequiredResult(err.paymentRequired);
         }
         return fail(err);
       }
