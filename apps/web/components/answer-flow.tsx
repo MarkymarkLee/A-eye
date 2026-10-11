@@ -259,6 +259,8 @@ export function AnswerFlow({ question: q, voice }: { question: Question; voice: 
               </label>
               <textarea
                 id="note"
+                name="free_text"
+                autoComplete="off"
                 rows={2}
                 maxLength={280}
                 value={freeText}

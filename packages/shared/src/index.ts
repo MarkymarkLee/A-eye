@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// Strict CSP (no eval) — zod v4's JIT compiler probes Function(""); run jitless instead.
+z.config({ jitless: true });
+
 // Shared contract between the web API and the MCP server.
 
 export const QuestionStatus = z.enum(["open", "closed", "settled", "expired"]);

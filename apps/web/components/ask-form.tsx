@@ -112,6 +112,8 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
         </label>
         <input
           id="q"
+          name="question"
+          autoComplete="off"
           required
           minLength={4}
           maxLength={240}
@@ -128,6 +130,8 @@ export function AskForm({ initial }: { initial?: { lat: number; lng: number } })
           {options.map((o, i) => (
             <div key={i} className="flex gap-2">
               <input
+                name={`option_${i + 1}`}
+                autoComplete="off"
                 aria-label={`Answer ${i + 1}`}
                 required
                 maxLength={60}
@@ -193,6 +197,8 @@ function Num(props: {
       </label>
       <input
         id={props.id}
+        name={props.id}
+        autoComplete="off"
         type={props.onNum ? "number" : "text"}
         inputMode={props.onNum ? "decimal" : undefined}
         min={props.min}
