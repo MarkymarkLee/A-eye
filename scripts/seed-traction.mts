@@ -97,9 +97,6 @@ function responseError(status: number, body: unknown): string {
 async function main() {
   const { live, only, maxSpend } = parseArgs(process.argv.slice(2));
   const validated = validateSeeds();
-  if (validated.reduce((sum, input) => sum + toUnits(input.prize_usd), 0n) !== 1_300_000n) {
-    throw new Error("The traction seeds must total 1.30 AUSD");
-  }
   const selected = validated
     .map((input, index) => ({ input, index }))
     .filter(({ index }) => !only || only.has(index + 1));
