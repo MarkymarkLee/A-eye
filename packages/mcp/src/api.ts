@@ -5,7 +5,9 @@ import type {
   QuestionResults,
   QuestionSummary,
 } from "@a-eye/shared";
-import { paymentTxFromHeaders } from "./payments.js";
+import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
+import type { PaymentPayload, PaymentRequired, SettleResponse } from "@x402/core/types";
+import { paymentResponseFromHeaders, paymentTxFromHeaders } from "./payments.js";
 import { downscaleImage } from "./images.js";
 
 export class ApiError extends Error {
@@ -14,6 +16,15 @@ export class ApiError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+export class PaymentRequiredError extends ApiError {
+  constructor(
+    message: string,
+    readonly paymentRequired: PaymentRequired | null,
+  ) {
+    super(402, message);
   }
 }
 
@@ -40,22 +51,54 @@ export class AEyeApi {
     if (!res.ok) {
       const message =
         body && typeof body === "object" && "error" in body ? String(body.error) : `${res.status} ${res.statusText}`;
-      throw new ApiError(
-        res.status,
+      const errorMessage =
         res.status === 402 && !this.paysAutomatically
           ? `${message}. Set AGENT_PRIVATE_KEY (a Base Sepolia wallet holding AUSD) so the MCP server can pay via x402.`
-          : message,
-      );
+          : message;
+      if (res.status === 402) {
+        let paymentRequired: PaymentRequired | null = null;
+        const header = res.headers.get("PAYMENT-REQUIRED");
+        if (header) {
+          try {
+            paymentRequired = decodePaymentRequiredHeader(header);
+          } catch {
+            paymentRequired = null;
+          }
+        }
+        if (
+          !paymentRequired &&
+          body &&
+          typeof body === "object" &&
+          "x402Version" in body &&
+          "accepts" in body &&
+          Array.isArray(body.accepts)
+        ) {
+          paymentRequired = body as PaymentRequired;
+        }
+        throw new PaymentRequiredError(errorMessage, paymentRequired);
+      }
+      throw new ApiError(res.status, errorMessage);
     }
     return { data: body as T, headers: res.headers };
   }
 
   async askQuestion(input: CreateQuestionInput): Promise<CreateQuestionResponse> {
+    return (await this.askQuestionPaid(input)).response;
+  }
+
+  async askQuestionPaid(
+    input: CreateQuestionInput,
+    payment?: PaymentPayload,
+  ): Promise<{ response: CreateQuestionResponse; receipt: SettleResponse | null }> {
     const { data, headers } = await this.requestWithHeaders<CreateQuestionResponse>("/api/questions", {
       method: "POST",
       body: JSON.stringify(input),
+      ...(payment && { headers: { "PAYMENT-SIGNATURE": encodePaymentSignatureHeader(payment) } }),
     });
-    return { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) };
+    return {
+      response: { ...data, payment_tx: data.payment_tx ?? paymentTxFromHeaders(headers) },
+      receipt: paymentResponseFromHeaders(headers),
+    };
   }
 
   getResults(questionId: string) {

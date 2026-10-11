@@ -1,5 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from "@x402/core/http";
+import type { PaymentPayload, PaymentRequired } from "@x402/core/types";
+import { AUSD, X402_NETWORK } from "@a-eye/shared";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { wrapMCPClientWithPayment } from "@x402/mcp";
+import { x402Client } from "@x402/fetch";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { AEyeApi, type FetchLike } from "../src/api.js";
 import { createServer } from "../src/server.js";
@@ -29,7 +36,10 @@ const results = (status: "open" | "closed") => ({
   raffle: { winner: null, payout_tx: null, seed_commit: "ab", seed_reveal: null, entropy_block_hash: null },
 });
 
-async function connect(fetchImpl: FetchLike, options: { pollIntervalMs?: number; maxImages?: number } = {}) {
+async function connect(
+  fetchImpl: FetchLike,
+  options: { pollIntervalMs?: number; maxImages?: number; mcpPayments?: boolean } = {},
+) {
   const server = createServer(new AEyeApi(BASE, fetchImpl), { pollIntervalMs: 1, ...options });
   const client = new Client({ name: "test", version: "0" });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -113,6 +123,138 @@ describe("a-eye MCP server", () => {
     const res = await client.callTool({ name: "get_question_results", arguments: { question_id: "q1" } });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toContain("Payment required");
+  });
+
+  it("keeps the stdio payment error text when MCP payments are disabled", async () => {
+    const client = await connect(async () => Response.json({ error: "Payment required" }, { status: 402 }));
+    const result = await client.callTool({
+      name: "ask_location_question",
+      arguments: { lat: 37.87, lng: -122.25, question: "Is there a line?", options: ["Yes", "No"] },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "Payment required. Set AGENT_PRIVATE_KEY (a Base Sepolia wallet holding AUSD) so the MCP server can pay via x402.",
+      },
+    ]);
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  it("returns the x402 MCP payment-required result when MCP payments are enabled", async () => {
+    const required: PaymentRequired = {
+      x402Version: 2,
+      resource: { url: `${BASE}/api/questions` },
+      accepts: [
+        {
+          scheme: "exact",
+          network: X402_NETWORK,
+          asset: AUSD.address,
+          amount: "2500000",
+          payTo: "0x293214291186180810902D97994c2C72fE88255A",
+          maxTimeoutSeconds: 300,
+          extra: { ...AUSD.eip712 },
+        },
+      ],
+    };
+    const client = await connect(
+      async () => Response.json(
+        { error: "Payment required" },
+        { status: 402, headers: { "PAYMENT-REQUIRED": encodePaymentRequiredHeader(required) } },
+      ),
+      { mcpPayments: true },
+    );
+    const result = await client.callTool({
+      name: "ask_location_question",
+      arguments: { lat: 37.87, lng: -122.25, question: "Is there a line?", options: ["Yes", "No"] },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual(required);
+    expect(result.content).toEqual([
+      { type: "text", text: JSON.stringify(required) },
+      {
+        type: "text",
+        text: 'Needs an x402 payment of 2.5 AUSD on Base Sepolia (eip155:84532). Use an x402-aware MCP client (@x402/mcp) that retries with _meta["x402/payment"], or run the a-eye-mcp stdio server with AGENT_PRIVATE_KEY.',
+      },
+    ]);
+  });
+
+  it("sends MCP payment metadata as PAYMENT-SIGNATURE and returns the settle receipt in metadata", async () => {
+    const payload = {
+      x402Version: 2,
+      accepted: { scheme: "exact", network: X402_NETWORK, asset: AUSD.address, amount: "2500000", payTo: "0x1234" },
+      payload: { authorization: { from: "0x1234" }, signature: "test" },
+    } as PaymentPayload;
+    const receipt = { success: true, transaction: `0x${"ab".repeat(32)}`, network: X402_NETWORK, payer: "0x1234" };
+    let signature: string | null = null;
+    const client = await connect(async (_url, init) => {
+      signature = new Headers(init?.headers).get("PAYMENT-SIGNATURE");
+      return Response.json(
+        { question_id: "q1", payment_tx: null, gallery_url: `${BASE}/q/q1`, seed_commit: "ab" },
+        { status: 201, headers: { "PAYMENT-RESPONSE": encodePaymentResponseHeader(receipt) } },
+      );
+    }, { mcpPayments: true });
+    const result = await client.callTool({
+      name: "ask_location_question",
+      arguments: { lat: 37.87, lng: -122.25, question: "Is there a line?", options: ["Yes", "No"] },
+      _meta: { "x402/payment": payload },
+    });
+    expect(decodePaymentSignatureHeader(signature!)).toEqual(payload);
+    expect(result._meta?.["x402/payment-response"]).toEqual(receipt);
+  });
+
+  it("works with the official x402 MCP payment client", async () => {
+    const required: PaymentRequired = {
+      x402Version: 2,
+      resource: { url: `${BASE}/api/questions` },
+      accepts: [
+        {
+          scheme: "exact",
+          network: X402_NETWORK,
+          asset: AUSD.address,
+          amount: "1000000",
+          payTo: "0x293214291186180810902D97994c2C72fE88255A",
+          maxTimeoutSeconds: 300,
+          extra: { ...AUSD.eip712 },
+        },
+      ],
+    };
+    const receipt = { success: true, transaction: `0x${"cd".repeat(32)}`, network: X402_NETWORK };
+    let paidRequest: PaymentPayload | undefined;
+    const server = createServer(
+      new AEyeApi(BASE, async (_url, init) => {
+        const signature = new Headers(init?.headers).get("PAYMENT-SIGNATURE");
+        if (!signature) {
+          return Response.json(
+            { error: "Payment required" },
+            { status: 402, headers: { "PAYMENT-REQUIRED": encodePaymentRequiredHeader(required) } },
+          );
+        }
+        paidRequest = decodePaymentSignatureHeader(signature);
+        return Response.json(
+          { question_id: "q1", payment_tx: null, gallery_url: `${BASE}/q/q1`, seed_commit: "ab" },
+          { status: 201, headers: { "PAYMENT-RESPONSE": encodePaymentResponseHeader(receipt) } },
+        );
+      }),
+      { mcpPayments: true },
+    );
+    const client = new Client({ name: "x402-test", version: "0" });
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const payer = privateKeyToAccount(generatePrivateKey());
+    const paymentClient = new x402Client().register(X402_NETWORK, new ExactEvmScheme(payer)).setSpendControls({
+      allowedAssets: [{ network: X402_NETWORK, asset: AUSD.address, maxAmountPerPayment: "25000000" }],
+    });
+    const paidClient = wrapMCPClientWithPayment(client, paymentClient);
+    const result = await paidClient.callTool("ask_location_question", {
+      lat: 37.87,
+      lng: -122.25,
+      question: "Is there a line?",
+      options: ["Yes", "No"],
+    });
+    expect(result.paymentMade).toBe(true);
+    expect(result.paymentResponse).toEqual(receipt);
+    expect(paidRequest?.accepted).toMatchObject({ asset: AUSD.address, amount: "1000000" });
   });
 
   it("downscales attached evidence photos to at most 512 px", async () => {

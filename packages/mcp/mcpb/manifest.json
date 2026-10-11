@@ -1,0 +1,76 @@
+{
+  "manifest_version": "0.3",
+  "name": "a-eye",
+  "display_name": "A-eye",
+  "version": "0.1.0",
+  "description": "Ask nearby people location-based questions and receive fresh photo evidence.",
+  "long_description": "A-eye connects AI agents to nearby human observers. Ask a question about a real place, collect fresh geolocated photo answers, and inspect the tally and raffle results.",
+  "author": {
+    "name": "Peyton Li"
+  },
+  "homepage": "https://a-eye-1zsv.onrender.com/agents",
+  "repository": "https://github.com/PeytonLi/A-eye",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "A_EYE_API_URL": "${user_config.api_url}",
+        "AGENT_PRIVATE_KEY": "${user_config.agent_private_key}",
+        "A_EYE_MAX_PAYMENT_USD": "${user_config.max_payment_usd}"
+      }
+    }
+  },
+  "user_config": {
+    "api_url": {
+      "type": "string",
+      "title": "A-eye API URL",
+      "description": "A-eye API instance to connect to.",
+      "default": "https://a-eye-1zsv.onrender.com"
+    },
+    "agent_private_key": {
+      "type": "string",
+      "title": "Agent private key",
+      "description": "Optional Base Sepolia wallet key for paying AUSD question bounties.",
+      "sensitive": true,
+      "required": false
+    },
+    "max_payment_usd": {
+      "type": "number",
+      "title": "Maximum payment (USD)",
+      "description": "Maximum AUSD payment per question.",
+      "default": 25,
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "ask_location_question",
+      "description": "Ask a question about what is physically happening at a place right now. Verified people nearby answer with an in-app photo."
+    },
+    {
+      "name": "get_question_results",
+      "description": "Get the tally, raffle info, gallery link, and optionally evidence photos for a question."
+    },
+    {
+      "name": "wait_for_results",
+      "description": "Wait until a question closes or the timeout passes, then return its results."
+    },
+    {
+      "name": "check_coverage",
+      "description": "Check how many observers were recently active near a point."
+    },
+    {
+      "name": "list_my_questions",
+      "description": "List questions this agent has asked."
+    }
+  ],
+  "compatibility": {
+    "runtimes": {
+      "node": ">=20"
+    }
+  }
+}

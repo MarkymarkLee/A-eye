@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { CreateQuestionInput, askQuestionShape, type QuestionResults } from "@a-eye/shared";
+import type { PaymentPayload } from "@x402/core/types";
 import { z } from "zod";
-import type { AEyeApi } from "./api.js";
+import { PaymentRequiredError, type AEyeApi } from "./api.js";
 
 const json = (value: unknown): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
@@ -48,7 +49,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function createServer(
   api: AEyeApi,
-  { pollIntervalMs = 3000, maxImages = Number(process.env.A_EYE_MCP_MAX_IMAGES ?? 8) } = {},
+  {
+    pollIntervalMs = 3000,
+    maxImages = Number(process.env.A_EYE_MCP_MAX_IMAGES ?? 8),
+    mcpPayments = false,
+  }: { pollIntervalMs?: number; maxImages?: number; mcpPayments?: boolean } = {},
 ): McpServer {
   const server = new McpServer({ name: "a-eye", version: "0.1.0" });
 
@@ -60,10 +65,31 @@ export function createServer(
         "Ask a question about what is physically happening at a place right now. Verified people nearby answer with an in-app photo. You pay the raffle prize (AUSD on Base Sepolia, via x402) when asking.",
       inputSchema: askQuestionShape,
     },
-    async (args) => {
+    async (args, extra) => {
       try {
+        if (mcpPayments) {
+          const payment = extra._meta?.["x402/payment"] as PaymentPayload | undefined;
+          const { response, receipt } = await api.askQuestionPaid(CreateQuestionInput.parse(args), payment);
+          return {
+            ...json(response),
+            ...(receipt && { _meta: { "x402/payment-response": receipt } }),
+          };
+        }
         return json(await api.askQuestion(CreateQuestionInput.parse(args)));
       } catch (err) {
+        if (mcpPayments && err instanceof PaymentRequiredError && err.paymentRequired) {
+          const amount = err.paymentRequired.accepts[0];
+          const units = amount && "amount" in amount ? amount.amount : amount && "maxAmountRequired" in amount ? amount.maxAmountRequired : "0";
+          const hint = `Needs an x402 payment of ${Number(units) / 1_000_000} AUSD on Base Sepolia (eip155:84532). Use an x402-aware MCP client (@x402/mcp) that retries with _meta["x402/payment"], or run the a-eye-mcp stdio server with AGENT_PRIVATE_KEY.`;
+          return {
+            isError: true,
+            structuredContent: err.paymentRequired,
+            content: [
+              { type: "text", text: JSON.stringify(err.paymentRequired) },
+              { type: "text", text: hint },
+            ],
+          };
+        }
         return fail(err);
       }
     },

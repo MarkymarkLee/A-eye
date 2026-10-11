@@ -46,8 +46,17 @@ The activity feed settles questions whose deadline has passed when polled. Quest
 Build and inspect the stdio server:
 
 ```bash
-npm run build -w @a-eye/mcp
+npm run build -w a-eye-mcp
 npx @modelcontextprotocol/inspector node packages/mcp/dist/index.js
+```
+
+The standalone package is `a-eye-mcp`; install it with `npx -y a-eye-mcp`. It defaults to the hosted A-eye API. Hosted Streamable HTTP MCP is also available at `https://a-eye-1zsv.onrender.com/mcp`.
+
+Claude Code can connect to the hosted MCP server through the repository plugin marketplace:
+
+```text
+/plugin marketplace add PeytonLi/A-eye
+/plugin install a-eye@a-eye
 ```
 
 Claude Desktop / Claude Code config:

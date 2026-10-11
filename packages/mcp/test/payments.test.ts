@@ -1,9 +1,19 @@
 import { AUSD, CreateQuestionInput, X402_NETWORK } from "@a-eye/shared";
-import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
+import {
+  decodePaymentSignatureHeader,
+  encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
+} from "@x402/core/http";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { AEyeApi, type FetchLike } from "../src/api.js";
-import { agentPrivateKey, createPayingFetch, paymentFromEnv, paymentTxFromHeaders } from "../src/payments.js";
+import { AEyeApi, PaymentRequiredError, type FetchLike } from "../src/api.js";
+import {
+  agentPrivateKey,
+  createPayingFetch,
+  paymentFromEnv,
+  paymentResponseFromHeaders,
+  paymentTxFromHeaders,
+} from "../src/payments.js";
 
 const BASE = "http://a-eye.test";
 const TX = `0x${"cd".repeat(32)}`;
@@ -42,6 +52,9 @@ function paywalledServer(amount: string) {
 describe("x402 payments in the MCP client", () => {
   it("reads AGENT_PRIVATE_KEY, falling back to A_EYE_AGENT_PRIVATE_KEY", () => {
     expect(agentPrivateKey({})).toBeUndefined();
+    expect(agentPrivateKey({ AGENT_PRIVATE_KEY: "${user_config.agent_private_key}" })).toBeUndefined();
+    expect(agentPrivateKey({ A_EYE_AGENT_PRIVATE_KEY: "${user_config.agent_private_key}" })).toBeUndefined();
+    expect(agentPrivateKey({ AGENT_PRIVATE_KEY: "${user_config.agent_private_key}", A_EYE_AGENT_PRIVATE_KEY: "ab" })).toBe("0xab");
     expect(agentPrivateKey({ A_EYE_AGENT_PRIVATE_KEY: "ab" })).toBe("0xab");
     expect(agentPrivateKey({ AGENT_PRIVATE_KEY: "0x01", A_EYE_AGENT_PRIVATE_KEY: "0x02" })).toBe("0x01");
     expect(paymentFromEnv({})).toBeUndefined();
@@ -77,5 +90,39 @@ describe("x402 payments in the MCP client", () => {
   it("parses settlement headers defensively", () => {
     expect(paymentTxFromHeaders(new Headers())).toBeNull();
     expect(paymentTxFromHeaders(new Headers({ "PAYMENT-RESPONSE": "garbage" }))).toBeNull();
+    const receipt = { success: true, transaction: TX, network: X402_NETWORK };
+    const headers = new Headers({ "X-PAYMENT-RESPONSE": encodePaymentResponseHeader(receipt) });
+    expect(paymentResponseFromHeaders(headers)).toEqual(receipt);
+    expect(paymentTxFromHeaders(headers)).toBe(TX);
+  });
+
+  it("preserves the existing 402 message and exposes decoded payment requirements", async () => {
+    const required = {
+      x402Version: 2,
+      resource: { url: `${BASE}/api/questions` },
+      accepts: [
+        {
+          scheme: "exact",
+          network: X402_NETWORK,
+          asset: AUSD.address,
+          amount: "1000000",
+          payTo: TREASURY,
+          maxTimeoutSeconds: 300,
+          extra: { ...AUSD.eip712 },
+        },
+      ],
+    };
+    const api = new AEyeApi(BASE, async () =>
+      Response.json(
+        { error: "Payment required" },
+        { status: 402, headers: { "PAYMENT-REQUIRED": encodePaymentRequiredHeader(required) } },
+      ),
+    );
+    await expect(api.askQuestion(input)).rejects.toMatchObject({
+      name: "Error",
+      message: "Payment required. Set AGENT_PRIVATE_KEY (a Base Sepolia wallet holding AUSD) so the MCP server can pay via x402.",
+      status: 402,
+      paymentRequired: required,
+    } satisfies Partial<PaymentRequiredError>);
   });
 });
