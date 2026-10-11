@@ -11,10 +11,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const transferAusd = vi.fn();
 const transferAusdViaFacilitator = vi.fn();
+const ausdBalance = vi.fn();
 vi.mock("./chain", async (orig) => ({
   ...(await orig<typeof import("./chain")>()),
   transferAusd,
   transferAusdViaFacilitator,
+  ausdBalance,
 }));
 
 const UPLOAD_DIR = mkdtempSync(path.join(tmpdir(), "a-eye-peek-"));
@@ -121,6 +123,7 @@ describe("pay-per-peek", () => {
     vi.stubEnv("A_EYE_PEEK_PRICE_USD", "0.02");
     vi.stubEnv("ALLOW_UNPAID_QUESTIONS", "");
     vi.stubEnv("A_EYE_PAYOUT_RAIL", "direct");
+    ausdBalance.mockReset().mockResolvedValue(10n ** 12n);
     transferAusd.mockReset().mockResolvedValue(PAYOUT_TX);
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});

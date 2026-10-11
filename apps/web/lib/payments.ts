@@ -1,6 +1,7 @@
 import { toBaseUnits, winnerPayout } from "@a-eye/shared";
 import {
   ausdAuthorizationUsed,
+  ausdBalance,
   ausdTxStatus,
   currentBlockNumber,
   explorerTxUrl,
@@ -73,6 +74,9 @@ export type TreasuryTransfer =
   | { status: "unconfirmed"; tx: string; error: string }
   | { status: "unconfirmed_authorization"; nonce: string; error: string };
 
+const isInsufficientBalanceError = (message: string) =>
+  /0xe450d38c|ERC20InsufficientBalance|insufficient[_ ]?balance|exceeds balance/i.test(message);
+
 /**
  * Ledger-backed variant of sendFromTreasury: reports exactly what happened so the
  * caller can persist retries. Tries the gasless facilitator rail first (unless
@@ -91,6 +95,21 @@ export async function transferFromTreasury(
   if (!to) return { status: "skipped", reason: "no_recipient" };
   if (amountUnits <= BigInt(0)) return { status: "skipped", reason: "zero_amount" };
   if (!isTreasuryConfigured()) return { status: "skipped", reason: "treasury_not_configured" };
+
+  try {
+    const treasury = treasuryAddress();
+    if (treasury) {
+      const balance = await ausdBalance(treasury);
+      if (balance < amountUnits) {
+        return {
+          status: "failed",
+          error: `insufficient_treasury_balance: have ${balance} need ${amountUnits}`,
+        };
+      }
+    }
+  } catch {
+    // Continue to the facilitator if the balance RPC is unavailable.
+  }
 
   if (process.env.A_EYE_PAYOUT_RAIL !== "direct") {
     let fromBlock: string | null = null;
@@ -112,6 +131,9 @@ export async function transferFromTreasury(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (err instanceof FacilitatorNotSubmittedError) {
+        if (isInsufficientBalanceError(message)) {
+          return { status: "failed", error: `insufficient_treasury_balance: ${message}` };
+        }
         console.warn(`[payments] ${kind} facilitator rail skipped (${message}); trying direct`);
         // Nothing was submitted: fall through to the direct rail below.
       } else {
