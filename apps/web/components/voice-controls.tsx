@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { CircleNotch, Microphone, SpeakerHigh, Stop } from "@phosphor-icons/react";
+import { LoaderCircle as CircleNotch, Mic as Microphone, Volume2 as SpeakerHigh, Square as Stop } from "lucide-react";
 
 const MAX_RECORDING_MS = 10_000;
 
@@ -54,11 +54,11 @@ export function ReadAloudButton({ text }: { text: string }) {
   return (
     <button type="button" onClick={toggle} disabled={state === "loading"} className="btn btn-ghost px-3 py-2 text-[14px]">
       {state === "loading" ? (
-        <CircleNotch size={16} weight="bold" className="animate-spin" />
+        <CircleNotch className="size-4 animate-spin" strokeWidth={2.4} aria-hidden />
       ) : state === "playing" ? (
-        <Stop size={16} weight="bold" />
+        <Stop className="size-4" strokeWidth={2.4} aria-hidden />
       ) : (
-        <SpeakerHigh size={16} weight="bold" />
+        <SpeakerHigh className="size-4" strokeWidth={2.4} aria-hidden />
       )}
       {state === "playing" ? "Stop" : state === "error" ? "Couldn't play. Retry" : "Read aloud"}
     </button>
@@ -147,11 +147,11 @@ export function SpeakAnswerButton({ onTranscript }: { onTranscript: (text: strin
         className={`btn px-3 py-2 text-[14px] ${state === "recording" ? "btn-primary" : "btn-ghost"}`}
       >
         {state === "transcribing" ? (
-          <CircleNotch size={16} weight="bold" className="animate-spin" />
+          <CircleNotch className="size-4 animate-spin" strokeWidth={2.4} aria-hidden />
         ) : state === "recording" ? (
-          <Stop size={16} weight="bold" />
+          <Stop className="size-4" strokeWidth={2.4} aria-hidden />
         ) : (
-          <Microphone size={16} weight="bold" />
+          <Microphone className="size-4" strokeWidth={2.4} aria-hidden />
         )}
         {state === "recording" ? "Done talking" : state === "transcribing" ? "Listening" : "Say your answer"}
       </button>

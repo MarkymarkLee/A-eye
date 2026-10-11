@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getResults } from "@/lib/store";
+import { Page } from "@/components/motion/page";
 import { requestOrigin } from "@/lib/request-origin";
 import { AnswerFlow } from "@/components/answer-flow";
 
@@ -17,5 +18,9 @@ export default async function AnswerPage({ params }: { params: Promise<{ id: str
   if (!r) notFound();
   if (r.status !== "open") redirect(`/q/${id}`);
   const { tally: _t, evidence: _e, raffle: _r, ...question } = r;
-  return <AnswerFlow question={question} />;
+  return (
+    <Page>
+      <AnswerFlow question={question} />
+    </Page>
+  );
 }

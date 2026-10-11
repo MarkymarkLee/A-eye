@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getResults } from "@/lib/store";
+import { Page } from "@/components/motion/page";
 import { requestOrigin } from "@/lib/request-origin";
 import { LiveResults } from "@/components/live-results";
 
@@ -20,5 +21,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const r = await getResults(id, await requestOrigin());
   if (!r) notFound();
-  return <LiveResults initial={r} dev={process.env.NODE_ENV !== "production"} />;
+  return (
+    <Page>
+      <LiveResults initial={r} dev={process.env.NODE_ENV !== "production"} />
+    </Page>
+  );
 }

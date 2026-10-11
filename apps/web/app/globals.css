@@ -2,61 +2,123 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 /*
- * A-eye tokens. One accent (signal orange), cool neutrals, auto light/dark.
- * Shape rule: interactive controls are full pills, panels are 16px,
- * inputs and photos are 12px. Nothing else.
+ * A-eye design tokens. Warm paper neutrals, one signal-orange accent, a sky blue
+ * reserved for "you are here". Theme comes from html[data-theme] (set before paint
+ * by the inline script in layout.tsx, defaulting to the OS setting).
+ * Shape rule: controls are pills, panels are 20px, inputs and photos 14px.
  */
 :root {
-  --bg: #f2f3f5;
-  --surface: #fbfbfc;
-  --surface-2: #e9ebee;
-  --ink: #111316;
-  --muted: #555b64;
-  --line: #d9dce1;
-  --accent: #f25c19;
-  --accent-ink: #b8400b;
-  --on-accent: #111316;
-  --ok: #17794a;
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #efede8;
+  --surface-3: #e5e2db;
+  --ink: #15130f;
+  --muted: #5f5a52;
+  --line: #e3e0d9;
+  --accent: #ff5b1f;
+  --accent-2: #ff3d6e;
+  --accent-ink: #b33a0b;
+  --accent-soft: #fff0e8;
+  --on-accent: #15130f;
+  --sky: #2f7cf6;
+  --ok: #157347;
+  --ok-soft: #e6f4ec;
+  --warn: #9a6200;
+  --warn-soft: #fdf3dd;
   --bad: #b42318;
-  --shadow: 0 1px 0 rgb(17 19 22 / 0.04), 0 8px 24px -12px rgb(40 48 60 / 0.18);
+  --bad-soft: #fdecea;
+  --shadow: 0 1px 0 rgb(21 19 15 / 0.04), 0 10px 30px -14px rgb(60 48 30 / 0.22);
+  --shadow-lg: 0 2px 0 rgb(21 19 15 / 0.03), 0 24px 60px -24px rgb(60 48 30 / 0.35);
+  --map-ctrl-filter: none;
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c0e11;
-    --surface: #14171b;
-    --surface-2: #1c2026;
-    --ink: #eceef1;
-    --muted: #9aa1ab;
-    --line: #262b32;
-    --accent: #ff6a2b;
-    --accent-ink: #ff8f5e;
-    --on-accent: #0c0e11;
-    --ok: #4ccb8a;
-    --bad: #ff7a6b;
-    --shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 12px 32px -16px rgb(0 0 0 / 0.6);
-    color-scheme: dark;
-  }
+:root[data-theme="dark"] {
+  --bg: #0b0c0e;
+  --surface: #141518;
+  --surface-2: #1d1f23;
+  --surface-3: #272a2f;
+  --ink: #f2f1ee;
+  --muted: #a5a199;
+  --line: #2a2c31;
+  --accent: #ff6a2b;
+  --accent-2: #ff4f7b;
+  --accent-ink: #ff9a66;
+  --accent-soft: #2a1710;
+  --on-accent: #0b0c0e;
+  --sky: #5b9bff;
+  --ok: #4ccb8a;
+  --ok-soft: #0f2a1d;
+  --warn: #f2b84b;
+  --warn-soft: #2a2110;
+  --bad: #ff7a6b;
+  --bad-soft: #2d1513;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 12px 32px -16px rgb(0 0 0 / 0.7);
+  --shadow-lg: 0 1px 0 rgb(255 255 255 / 0.04), 0 30px 70px -30px rgb(0 0 0 / 0.85);
+  --map-ctrl-filter: invert(1);
+  color-scheme: dark;
 }
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
   --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-sky: var(--sky);
   --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
   --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
   --shadow-panel: var(--shadow);
+  --shadow-lift: var(--shadow-lg);
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --radius-panel: 16px;
-  --radius-field: 12px;
+  --radius-panel: 20px;
+  --radius-field: 14px;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pulse-ring: pulse-ring 2.2s var(--ease-out-expo) infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-float: float 5s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 html {
@@ -68,6 +130,7 @@ html {
 body {
   background: var(--bg);
   font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
@@ -79,64 +142,105 @@ body {
   outline-offset: 2px;
 }
 
-@layer components {
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  white-space: nowrap;
-  border-radius: 9999px;
-  padding: 0.75rem 1.25rem;
-  font-weight: 550;
-  font-size: 0.95rem;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s, opacity 0.2s;
-}
-.btn:active:not(:disabled) {
-  transform: scale(0.98) translateY(1px);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.btn-primary {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.btn-primary:disabled {
-  opacity: 1;
-  background: var(--surface-2);
-  color: var(--muted);
-}
-.btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--accent) 88%, var(--ink));
-}
-.btn-ghost {
-  background: transparent;
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.btn-ghost:hover:not(:disabled) {
-  background: var(--surface-2);
+.text-gradient {
+  background: linear-gradient(100deg, var(--accent) 10%, var(--accent-2) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.field {
-  width: 100%;
-  border-radius: var(--radius-field);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  padding: 0.7rem 0.85rem;
-  color: var(--ink);
-  font-size: 1rem;
+.bg-aurora {
+  background:
+    radial-gradient(60% 50% at 15% 10%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%),
+    radial-gradient(50% 45% at 90% 20%, color-mix(in oklab, var(--accent-2) 16%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 50% 100%, color-mix(in oklab, var(--sky) 14%, transparent), transparent 70%),
+    var(--bg);
 }
-.field::placeholder {
-  color: var(--muted);
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    color-mix(in oklab, var(--surface-2) 55%, var(--surface)) 40%,
+    var(--surface-2) 80%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
 }
-.field:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-  border-color: transparent;
-}
+
+/* Legacy component classes, kept so every lane's markup matches the design system. */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    border-radius: 9999px;
+    padding: 0.8rem 1.3rem;
+    min-height: 2.75rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: -0.005em;
+    transition:
+      transform 0.25s var(--ease-out-expo),
+      background-color 0.2s,
+      box-shadow 0.2s,
+      opacity 0.2s;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.25),
+      0 8px 20px -10px color-mix(in oklab, var(--accent) 80%, transparent);
+  }
+  .btn-primary:disabled {
+    opacity: 1;
+    background: var(--surface-2);
+    color: var(--muted);
+    box-shadow: none;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--accent) 90%, var(--ink));
+  }
+  .btn-ghost {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+
+  .field {
+    width: 100%;
+    min-height: 2.9rem;
+    border-radius: var(--radius-field);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 0.7rem 0.9rem;
+    color: var(--ink);
+    font-size: 1rem;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
+  }
+  .field::placeholder {
+    color: color-mix(in oklab, var(--muted) 80%, transparent);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent);
+  }
 }
 
 /* MapLibre controls, matched to tokens */
@@ -146,13 +250,12 @@ body {
   box-shadow: var(--shadow) !important;
   overflow: hidden;
 }
-.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-  filter: var(--map-ctrl-filter, none);
+.maplibregl-ctrl-group button {
+  width: 36px !important;
+  height: 36px !important;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --map-ctrl-filter: invert(1);
-  }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: var(--map-ctrl-filter);
 }
 .maplibregl-ctrl-attrib {
   background: color-mix(in oklab, var(--surface) 80%, transparent) !important;
@@ -162,12 +265,104 @@ body {
 .maplibregl-ctrl-attrib a {
   color: var(--muted) !important;
 }
+.maplibregl-ctrl-attrib-button {
+  filter: var(--map-ctrl-filter);
+}
+
+/* Route transitions (React <ViewTransition>, see components/motion/page.tsx). */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-group(site-header),
+::view-transition-group(tab-bar) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(site-header),
+::view-transition-old(tab-bar) {
+  display: none;
+}
+::view-transition-new(site-header),
+::view-transition-new(tab-bar) {
+  animation: none;
+}
+::view-transition-old(.nav-forward) {
+  --slide-offset: -48px;
+  animation:
+    140ms ease-in both vt-fade reverse,
+    380ms var(--ease-out-expo) both vt-slide reverse;
+}
+::view-transition-new(.nav-forward) {
+  --slide-offset: 48px;
+  animation:
+    220ms ease-out 120ms both vt-fade,
+    420ms var(--ease-out-expo) both vt-slide;
+}
+::view-transition-old(.nav-back) {
+  --slide-offset: 48px;
+  animation:
+    140ms ease-in both vt-fade reverse,
+    380ms var(--ease-out-expo) both vt-slide reverse;
+}
+::view-transition-new(.nav-back) {
+  --slide-offset: -48px;
+  animation:
+    220ms ease-out 120ms both vt-fade,
+    420ms var(--ease-out-expo) both vt-slide;
+}
+::view-transition-old(.fade),
+::view-transition-new(.fade) {
+  animation-duration: 220ms;
+}
+::view-transition-group(.morph) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+::view-transition-image-pair(.morph) {
+  animation-name: vt-blur;
+}
+@keyframes vt-fade {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+@keyframes vt-slide {
+  from {
+    translate: var(--slide-offset);
+  }
+  to {
+    translate: 0;
+  }
+}
+@keyframes vt-blur {
+  30% {
+    filter: blur(2px);
+  }
+}
+
+/* vaul drawer: make the overlay match the theme */
+[data-vaul-overlay] {
+  background: rgb(10 9 8 / 0.45) !important;
+  backdrop-filter: blur(2px);
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
 }
