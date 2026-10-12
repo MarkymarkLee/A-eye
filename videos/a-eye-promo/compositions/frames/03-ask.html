@@ -1,0 +1,185 @@
+<template>
+<div data-hf-id="hf-oavr" id="root" data-composition-id="03-ask" data-start="0" data-duration="5" data-width="1920" data-height="1080">
+<style>
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-fef07dbb0973bf53-s.3p2_lha1f2xer.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-8a480f0b521d4e75-s.1qq4vpdcun5oj.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-53b9e256198e5412-s.390ncx5urfkfu.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7178b3e590c64307-s.21jp631_3pja2.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-5ce348bf30bf5439-s.31988l_ccedte.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-4fa387ec64143e14-s.2tuy5pz7dlieh.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-6306c77e7c8268e4-s.2dbetqa9o8jxf.woff2")format("woff2");unicode-range:U+2000-2001,U+2004-2008,U+200A,U+23B8-23BD,U+2500-259F}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7d817b4c03b0c5f1-s.1uyisp29ctx0d.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-797e433ab948586e-s.p.0r6juujl39pe6.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+#root { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: Geist, sans-serif; color: #15130F; }
+.\30 3-ask-bg { position: absolute; inset: 0; background: #F7F6F3; }
+#\30 3-ask-world { position: absolute; inset: 0; transform-origin: 34% 45%; }
+#\30 3-ask-label { position: absolute; left: 96px; top: 28px; display: flex; align-items: center; gap: 18px;
+  font: 700 22px/1 Geist, sans-serif; letter-spacing: 5px; text-transform: uppercase; color: #B33A0B; }
+#\30 3-ask-label i { display: block; width: 56px; height: 4px; background: #FF5B1F; }
+#\30 3-ask-card { position: absolute; left: 96px; top: 168px; width: 1104px; background: #FFFFFF;
+  border-top: 5px solid #FF5B1F; }
+.\30 3-ask-bar { position: relative; height: 60px; background: #15130F; display: flex; align-items: center; padding: 0 26px; gap: 12px; }
+.\30 3-ask-dot { width: 14px; height: 14px; border-radius: 50%; background: #5F5A52; }
+.\30 3-ask-dot:first-child { background: #FF5B1F; }
+.\30 3-ask-bar-title { margin-left: 18px; font: 500 20px/1 "Geist Mono", monospace; letter-spacing: 1px; color: #F7F6F3; }
+.\30 3-ask-bar-meta { margin-left: auto; font: 500 16px/1 "Geist Mono", monospace; letter-spacing: 3px; text-transform: uppercase; color: #B0B0B0; }
+#\30 3-ask-flash { position: absolute; inset: 0; background: #FF5B1F; opacity: 0; pointer-events: none; }
+.\30 3-ask-code { position: relative; padding: 38px 48px 34px; height: 262px; }
+#\30 3-ask-type { margin: 0; white-space: pre; font: 500 30px/1.6 "Geist Mono", monospace; color: #15130F; }
+#\30 3-ask-type .s { color: #B33A0B; }
+#\30 3-ask-type .k { color: #5F5A52; }
+#\30 3-ask-type .n { color: #B33A0B; }
+#\30 3-ask-caret { display: inline-block; width: 15px; height: 34px; margin-left: 2px; vertical-align: -6px; background: #FF5B1F; }
+.\30 3-ask-prompt { position: absolute; left: 48px; top: 6px; font: 500 15px/1 "Geist Mono", monospace; letter-spacing: 3px; color: #B0B0B0; text-transform: uppercase; }
+.\30 3-ask-rule { height: 2px; margin: 0 48px; background: #F7F6F3; }
+.\30 3-ask-resp { padding: 26px 48px 36px; display: flex; flex-direction: column; gap: 18px; min-height: 236px; }
+.\30 3-ask-row { display: flex; align-items: center; gap: 22px; font: 500 26px/1.2 "Geist Mono", monospace; color: #15130F; }
+.\30 3-ask-row.muted { color: #6B6B6B; }
+.\30 3-ask-arrow { color: #B0B0B0; width: 26px; }
+.\30 3-ask-chk { position: relative; width: 34px; height: 34px; border: 3px solid #B0B0B0; flex: none; }
+.\30 3-ask-chk-fill { position: absolute; inset: -3px; background: #FF5B1F; opacity: 0; }
+.\30 3-ask-chk-fill.ok { background: #157347; }
+.\30 3-ask-chk svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.\30 3-ask-chk path { fill: none; stroke: #FFFFFF; stroke-width: 3.4; stroke-linecap: square; stroke-dasharray: 20; stroke-dashoffset: 20; }
+.\30 3-ask-row b { font-weight: 700; color: #157347; }
+#\30 3-ask-pinwrap { position: absolute; left: 1290px; top: 210px; width: 480px; height: 560px; }
+#\30 3-ask-ring { position: absolute; left: 140px; top: 318px; width: 200px; height: 200px; border-radius: 50%;
+  border: 4px solid #FF5B1F; opacity: 0; }
+#\30 3-ask-ring2 { position: absolute; left: 190px; top: 368px; width: 100px; height: 100px; border-radius: 50%;
+  background: rgba(255,91,31,0.14); opacity: 0; }
+#\30 3-ask-pin { position: absolute; left: 150px; top: 120px; width: 180px; height: 300px; transform-origin: 50% 100%; }
+#\30 3-ask-pinlabel { position: absolute; left: 0; width: 480px; top: 470px; text-align: center; }
+.\30 3-ask-pl-1 { font: 700 46px/1.05 Geist, sans-serif; letter-spacing: -0.03em; color: #15130F; }
+.\30 3-ask-pl-2 { margin-top: 14px; font: 700 20px/1 Geist, sans-serif; letter-spacing: 5px; text-transform: uppercase; color: #B33A0B; }
+</style>
+
+<div data-hf-id="hf-g9vm" class="clip 03-ask-bg" data-start="0" data-duration="5" data-track-index="0"></div>
+
+<div data-hf-id="hf-fzes" id="03-ask-world" class="clip" data-start="0" data-duration="5" data-track-index="1">
+  <div data-hf-id="hf-ja7s" id="03-ask-label"><i data-hf-id="hf-wt6k"></i>1 · Agent asks</div>
+
+  <div data-hf-id="hf-ssnp" id="03-ask-card">
+    <div data-hf-id="hf-x1vj" class="03-ask-bar">
+      <span data-hf-id="hf-8w0w" class="03-ask-dot"></span><span data-hf-id="hf-nswo" class="03-ask-dot"></span><span data-hf-id="hf-mlzl" class="03-ask-dot"></span>
+      <span data-hf-id="hf-23vi" class="03-ask-bar-title">a-eye MCP</span>
+      <span data-hf-id="hf-msm2" class="03-ask-bar-meta">tool call</span>
+      <div data-hf-id="hf-01dn" id="03-ask-flash"></div>
+    </div>
+    <div data-hf-id="hf-wsnj" class="03-ask-code">
+      <pre data-hf-id="hf-7t6h" id="03-ask-type"></pre>
+    </div>
+    <div data-hf-id="hf-7dgq" class="03-ask-rule"></div>
+    <div data-hf-id="hf-cnae" class="03-ask-resp">
+      <div data-hf-id="hf-hf5y" class="03-ask-row muted" id="03-ask-r1">
+        <span data-hf-id="hf-8565" class="03-ask-chk"><span data-hf-id="hf-oypd" class="03-ask-chk-fill"></span><svg data-hf-id="hf-z8jt" viewBox="0 0 28 28"><path data-hf-id="hf-fj6c" d="M6 14.5l5 5 11-11" /></svg></span>
+        <span data-hf-id="hf-uwl0">402 Payment Required</span>
+      </div>
+      <div data-hf-id="hf-fuce" class="03-ask-row" id="03-ask-r2">
+        <span data-hf-id="hf-kwrl" class="03-ask-chk"><span data-hf-id="hf-l19h" class="03-ask-chk-fill"></span><svg data-hf-id="hf-eqd9" viewBox="0 0 28 28"><path data-hf-id="hf-g2jw" d="M6 14.5l5 5 11-11" /></svg></span>
+        <span data-hf-id="hf-ub65">Signed ERC-3009 authorization</span>
+      </div>
+      <div data-hf-id="hf-jsgf" class="03-ask-row" id="03-ask-r3">
+        <span data-hf-id="hf-m3oo" class="03-ask-chk"><span data-hf-id="hf-ph15" class="03-ask-chk-fill ok"></span><svg data-hf-id="hf-fxac" viewBox="0 0 28 28"><path data-hf-id="hf-evmt" d="M6 14.5l5 5 11-11" /></svg></span>
+        <span data-hf-id="hf-mrhr">Paid 0.10 AUSD · Base Sepolia · <b data-hf-id="hf-p5uf">no gas</b></span>
+      </div>
+    </div>
+  </div>
+
+  <div data-hf-id="hf-cu0w" id="03-ask-pinwrap">
+    <div data-hf-id="hf-l2fl" id="03-ask-ring2"></div>
+    <div data-hf-id="hf-o4s9" id="03-ask-ring"></div>
+    <svg data-hf-id="hf-3jww" id="03-ask-pin" viewBox="0 0 180 300">
+      <path data-hf-id="hf-sekq" d="M90 6C43 6 8 41 8 88c0 62 82 140 82 206 0-66 82-144 82-206C172 41 137 6 90 6z" fill="#FF5B1F" />
+      <circle data-hf-id="hf-8x3x" cx="90" cy="88" r="38" fill="#F7F6F3" />
+      <circle data-hf-id="hf-6e0p" cx="90" cy="88" r="16" fill="#15130F" />
+    </svg>
+    <div data-hf-id="hf-3uam" id="03-ask-pinlabel">
+      <div data-hf-id="hf-db0c" class="03-ask-pl-1">Question live</div>
+      <div data-hf-id="hf-a33c" class="03-ask-pl-2">150 m radius</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(function () {
+  var FID = "03-ask";
+  var $ = function (id) { return document.getElementById(FID + "-" + id); };
+
+  // Token segments: [text, class]
+  var segs = [
+    ["ask_location_question", ""], ["({\n", "k"],
+    ["  question: ", "k"], ["\"Is there a line at the coffee cart?\"", "s"], [",\n", "k"],
+    ["  radius_m: ", "k"], ["150", "n"], [", minutes: ", "k"], ["10", "n"], [", prize: ", "k"], ["\"0.10 AUSD\"", "s"], ["\n", "k"],
+    ["})", "k"]
+  ];
+  var chars = [];
+  segs.forEach(function (s) { for (var i = 0; i < s[0].length; i++) chars.push([s[0][i], s[1]]); });
+  var esc = function (c) { return c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === "&" ? "&amp;" : c; };
+  var typeEl = $("type");
+  var state = { n: 0, caret: 1 };
+  function render() {
+    var n = Math.round(state.n), html = "", cur = null, buf = "";
+    for (var i = 0; i < n; i++) {
+      var cls = chars[i][1];
+      if (cls !== cur) { if (buf) html += cur ? '<span class="' + cur + '">' + buf + "</span>" : buf; buf = ""; cur = cls; }
+      buf += esc(chars[i][0]);
+    }
+    if (buf) html += cur ? '<span class="' + cur + '">' + buf + "</span>" : buf;
+    html += '<span id="' + FID + '-caret" style="opacity:' + (state.caret > 0.5 ? 1 : 0) + '"></span>';
+    typeEl.innerHTML = html;
+  }
+  render();
+
+  var tl = gsap.timeline({ paused: true, onUpdate: render });
+
+  // Scene 1 (0.0–0.5): label + card slide up
+  tl.fromTo($("label"), { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.4, ease: "power3.out" }, 0.05);
+  tl.fromTo($("card"), { opacity: 0, y: 90 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, 0);
+  // slow camera push under the whole shot
+  tl.fromTo($("world"), { scale: 1 }, { scale: 1.03, duration: 4.5, ease: "sine.inOut" }, 0);
+
+  // Scene 2 (0.5–2.4): char-by-char typing, caret solid while typing
+  tl.fromTo(state, { n: 0 }, { n: chars.length, duration: 1.85, ease: "none", onUpdate: render }, 0.5);
+
+  // Scene 3 (2.4–3.6): submit flash, caret blinks then hides, rows cascade
+  tl.fromTo($("flash"), { opacity: 0 }, { opacity: 0.85, duration: 0.06, ease: "none" }, 2.4);
+  tl.to($("flash"), { opacity: 0, duration: 0.35, ease: "power2.out" }, 2.46);
+  tl.fromTo($("card"), { scale: 1 }, { scale: 0.992, duration: 0.07, ease: "power2.out" }, 2.4);
+  tl.to($("card"), { scale: 1, duration: 0.45, ease: "elastic.out(1, 0.5)" }, 2.47);
+  tl.set(state, { caret: 0 }, 2.4);
+  tl.set(state, { caret: 1 }, 2.75);
+  tl.set(state, { caret: 0 }, 3.1);
+  tl.set(state, { caret: 1 }, 3.45);
+  tl.set(state, { caret: 0 }, 3.8);
+  tl.set(state, { caret: 1 }, 4.15);
+
+  var rows = [["r1", 2.55], ["r2", 2.9], ["r3", 3.25]];
+  rows.forEach(function (r) {
+    var row = $(r[0]), t = r[1];
+    tl.fromTo(row, { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out" }, t);
+    var fill = row.querySelector("." + CSS.escape(FID + "-chk-fill"));
+    var chk = row.querySelector("." + CSS.escape(FID + "-chk"));
+    var path = row.querySelector("path");
+    tl.fromTo(chk, { scale: 1 }, { scale: 1.18, duration: 0.08, ease: "power2.out" }, t + 0.14);
+    tl.to(chk, { scale: 1, duration: 0.3, ease: "back.out(3)" }, t + 0.22);
+    tl.fromTo(fill, { opacity: 0 }, { opacity: 1, duration: 0.08, ease: "none" }, t + 0.14);
+    tl.fromTo(path, { strokeDashoffset: 20 }, { strokeDashoffset: 0, duration: 0.18, ease: "power2.out" }, t + 0.18);
+  });
+
+  // Scene 4 (3.6–4.5): pin drops, ring pulses once, label
+  tl.fromTo($("pin"), { opacity: 0, y: -160, scaleY: 1 }, { opacity: 1, y: 0, duration: 0.38, ease: "power3.in" }, 3.6);
+  tl.to($("pin"), { scaleY: 0.9, scaleX: 1.06, duration: 0.07, ease: "power2.out" }, 3.98);
+  tl.to($("pin"), { scaleY: 1, scaleX: 1, duration: 0.35, ease: "elastic.out(1, 0.45)" }, 4.05);
+  tl.fromTo($("ring2"), { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out" }, 3.98);
+  tl.fromTo($("ring"), { opacity: 0.9, scale: 0.3 }, { opacity: 0, scale: 2.1, duration: 0.5, ease: "power2.out" }, 3.98);
+  tl.fromTo($("pinlabel"), { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 4.05);
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines[FID] = tl;
+})();
+</script>
+</div>
+</template>

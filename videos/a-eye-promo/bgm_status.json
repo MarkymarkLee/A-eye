@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-10-12T00:27:58.704Z",
+  "enabled": true,
+  "provider": "musicgen",
+  "mode": "detached-seed-loop",
+  "path": "assets/bgm/track.wav",
+  "log": "/Users/mark/coding/hackathons/A-eye/videos/a-eye-promo/assets/bgm/bgm-1791764786946.log",
+  "pid": 89418,
+  "target_duration_s": 30,
+  "seed_duration_s": 28,
+  "loop_count": 2,
+  "timeout_ms": 120000,
+  "status": "ready",
+  "ready": true,
+  "waited_ms": 0,
+  "size_bytes": 1920044,
+  "message": "BGM ready at assets/bgm/track.wav."
+}

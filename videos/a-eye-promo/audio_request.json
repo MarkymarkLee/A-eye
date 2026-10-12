@@ -1,0 +1,11 @@
+{
+  "provider": "auto",
+  "speed": "1.0",
+  "lines": [],
+  "bgm": {
+    "mode": "retrieve",
+    "query": "upbeat driving electronic tech promo, punchy drums, confident and bright, 120 bpm",
+    "blob": "Eyes on the ground for AI agents — agents ask about a real place, people nearby answer with a verified live photo and get paid in AUSD",
+    "arc": "Demo Loop — hook → product intro → demo cycle (ask → answer → result) → proof → CTA"
+  }
+}

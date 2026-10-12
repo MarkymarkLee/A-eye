@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A-eye banner</title>
+<!-- Source for docs/media/banner.png. Re-render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1280,400 \
+       --screenshot=docs/media/banner.png docs/media/banner-src/banner.html -->
+<style>
+  @font-face { font-family: Geist; font-weight: 100 900; src: url("geist.woff2") format("woff2"); }
+  @font-face { font-family: "Geist Mono"; font-weight: 100 900; src: url("geist-mono.woff2") format("woff2"); }
+  :root {
+    --bg: #f7f6f3; --surface: #fff; --ink: #15130f; --muted: #5f5a52; --line: #e3e0d9;
+    --accent: #ff5b1f; --accent-2: #ff3d6e; --accent-ink: #b33a0b; --accent-soft: #fff0e8;
+    --ok: #157347; --ok-soft: #e6f4ec;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1280px; height: 400px; overflow: hidden; }
+  body {
+    font-family: Geist, system-ui, sans-serif; color: var(--ink); background: var(--bg);
+    position: relative;
+  }
+  .glow { position: absolute; border-radius: 50%; filter: blur(70px); }
+  .glow.a { width: 520px; height: 420px; left: -140px; top: -180px; background: #ffd9c6; }
+  .glow.b { width: 560px; height: 460px; right: 120px; bottom: -260px; background: #ffd3df; }
+  .glow.c { width: 380px; height: 380px; right: -120px; top: -160px; background: #ffe6d9; }
+
+  .left { position: absolute; left: 72px; top: 0; bottom: 0; width: 700px; display: flex; flex-direction: column; justify-content: center; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .brand svg { width: 52px; height: 52px; }
+  .brand span { font-size: 38px; font-weight: 700; letter-spacing: -0.03em; }
+  h1 { font-size: 58px; line-height: 1.02; font-weight: 700; letter-spacing: -0.035em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  p { margin-top: 18px; font-size: 20px; line-height: 1.45; color: var(--muted); max-width: 600px; }
+  .chips { margin-top: 24px; display: flex; gap: 10px; align-items: center; }
+  .cmd { font-family: "Geist Mono", monospace; font-size: 16px; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; }
+  .cmd b { color: var(--accent); font-weight: 500; margin-right: 8px; }
+  .chip { font-size: 15px; font-weight: 600; padding: 9px 14px; border-radius: 999px; }
+  .chip.soft { background: var(--accent-soft); color: var(--accent-ink); }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); }
+
+  .stage { position: absolute; right: 0; top: 0; width: 500px; height: 400px; }
+  .phone {
+    position: absolute; left: 190px; top: 38px; width: 236px; height: 492px;
+    background: var(--ink); border-radius: 40px; padding: 9px;
+    box-shadow: 0 30px 60px -24px rgba(60,48,30,.45); transform: rotate(4deg);
+  }
+  .phone .screen { width: 100%; height: 100%; border-radius: 32px; overflow: hidden; background: var(--bg); }
+  .phone img { width: 100%; display: block; }
+  .card {
+    position: absolute; background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: 0 1px 0 #15130f0a, 0 18px 40px -18px rgba(60,48,30,.35);
+  }
+  .ask { left: 18px; top: 74px; width: 250px; padding: 14px 16px; }
+  .ask .k { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent-ink); text-transform: uppercase; }
+  .ask .q { margin-top: 6px; font-size: 16px; font-weight: 600; line-height: 1.3; }
+  .paid { left: 56px; top: 262px; padding: 11px 14px; display: flex; align-items: center; gap: 10px; }
+  .paid .dot { width: 26px; height: 26px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; }
+  .paid .t { font-size: 14px; font-weight: 700; }
+  .paid .s { font-family: "Geist Mono", monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="glow a"></div><div class="glow b"></div><div class="glow c"></div>
+
+  <div class="left">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <defs><linearGradient id="iris" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5b1f"/><stop offset="1" stop-color="#ff3d6e"/></linearGradient></defs>
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="url(#iris)" stroke-width="3"/>
+        <circle cx="12" cy="12" r="3.2" fill="#15130f"/>
+        <circle cx="13.3" cy="10.7" r="1" fill="#f7f6f3"/>
+      </svg>
+      <span>A-eye</span>
+    </div>
+    <h1>Eyes on the ground<br>for <em>AI agents.</em></h1>
+    <p>Agents ask about a real place. People nearby answer with a verified live photo, and get paid in AUSD.</p>
+    <div class="chips">
+      <span class="cmd"><b>$</b>npx -y a-eye-mcp</span>
+      <span class="chip soft">MCP · x402</span>
+      <span class="chip ok">Live on testnet</span>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="phone"><div class="screen"><img src="app-home.png" alt=""></div></div>
+    <div class="card ask">
+      <div class="k">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b33a0b" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>
+        AI agent asks
+      </div>
+      <div class="q">Is there a line at the coffee cart right now?</div>
+    </div>
+    <div class="card paid">
+      <div class="dot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <div><div class="t">Verified photo · paid in AUSD</div><div class="s">GPS ✓ · &lt;2 min ✓ · unique ✓</div></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "tts_provider": null,
+  "voice_id": null,
+  "bgm": {
+    "path": "assets/bgm/track-faded.wav",
+    "volume": 0.9,
+    "mode": "detached-seed-loop",
+    "duration_s": 30.0
+  },
+  "bgm_pending": false,
+  "bgm_provider": "musicgen",
+  "bgm_pid": 89418,
+  "bgm_log": "/Users/mark/coding/hackathons/A-eye/videos/a-eye-promo/assets/bgm/bgm-1791764786946.log",
+  "bgm_mode": "detached-seed-loop",
+  "bgm_target_duration_s": 30,
+  "bgm_seed_duration_s": 28,
+  "bgm_loop_count": 2,
+  "voices": [],
+  "sfx": [],
+  "total_duration_s": 0
+}

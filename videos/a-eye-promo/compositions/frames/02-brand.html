@@ -1,0 +1,200 @@
+<template>
+  <style>
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-fef07dbb0973bf53-s.3p2_lha1f2xer.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-8a480f0b521d4e75-s.1qq4vpdcun5oj.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-53b9e256198e5412-s.390ncx5urfkfu.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7178b3e590c64307-s.21jp631_3pja2.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: Geist, sans-serif;
+      color: #15130F;
+      --accent: #15130F;
+      --accent-2: #F7F6F3;
+      --bg: #F7F6F3;
+    }
+
+    /* full-bleed coral field + signature 45deg hatch (6% ink) */
+    [id="02-brand-bg"] {
+      position: absolute;
+      inset: 0;
+      background: #FF5B1F;
+    }
+    [id="02-brand-bg"]::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(45deg, transparent 0 20px, rgba(0,0,0,.06) 20px 40px);
+    }
+
+    [id="02-brand-stage"] {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* lockup: mark (240) + gap (48) + wordmark box (520) = 808px, centered */
+    [id="02-brand-lockup"] {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 300px;
+      height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 48px;
+      transform-origin: 50% 50%;
+    }
+
+    [id="02-brand-mark"] {
+      width: 240px;
+      height: 240px;
+      flex: 0 0 240px;
+      color: #15130F;
+      transform-origin: 50% 50%;
+    }
+    [id="02-brand-mark"] svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    [id="02-brand-word"] {
+      flex: 0 0 520px;
+      width: 520px;
+      font-size: 172.8px; /* jumbo-feature 9cqw */
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      white-space: nowrap;
+      color: #15130F;
+      padding-bottom: 12px;
+    }
+
+    [id="02-brand-tagline"] {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 610px;
+      text-align: center;
+      font-size: 71px; /* column-title 3.7cqw */
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      white-space: nowrap;
+      color: #15130F;
+    }
+    [id="02-brand-tagline"] .w {
+      display: inline-block;
+      margin: 0 0.12em;
+    }
+  </style>
+
+  <div data-hf-id="hf-2nxi" id="root" data-composition-id="02-brand" data-width="1920" data-height="1080" data-duration="3.6">
+    <div data-hf-id="hf-66p7" id="02-brand-bg" class="clip" data-start="0" data-duration="3.6" data-track-index="0"></div>
+
+    <div data-hf-id="hf-jbql" id="02-brand-stage" class="clip" data-start="0" data-duration="3.6" data-track-index="1">
+      <div data-hf-id="hf-ofbi" id="02-brand-lockup">
+        <div data-hf-id="hf-aj9n" id="02-brand-mark">
+          <svg data-hf-id="hf-j3cc" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+            <defs data-hf-id="hf-mh0t">
+              <lineargradient data-hf-id="hf-02qj" id="02-brand-iris" x1="0" y1="0" x2="1" y2="1">
+                <stop data-hf-id="hf-fsc9" offset="0" stop-color="var(--accent)" />
+                <stop data-hf-id="hf-0mxx" offset="1" stop-color="var(--accent-2)" />
+              </lineargradient>
+            </defs>
+            <circle data-hf-id="hf-fjl4" id="02-brand-ring" cx="12" cy="12" r="8.5" fill="none" stroke="url(#02-brand-iris)" stroke-width="3" stroke-dasharray="53.41" stroke-dashoffset="53.41" transform="rotate(-90 12 12)" />
+            <circle data-hf-id="hf-iln0" id="02-brand-pupil" cx="12" cy="12" r="3.2" fill="currentColor" />
+            <circle data-hf-id="hf-lma6" id="02-brand-glint" cx="13.3" cy="10.7" r="1" fill="var(--bg)" />
+          </svg>
+        </div>
+        <div data-hf-id="hf-z0w3" id="02-brand-word">A-eye</div>
+      </div>
+
+      <div data-hf-id="hf-wcy6" id="02-brand-tagline"><span data-hf-id="hf-c0u2" class="w">Eyes</span><span data-hf-id="hf-mx6p" class="w">on</span><span data-hf-id="hf-9o0j" class="w">the</span><span data-hf-id="hf-rz3n" class="w">ground</span><span data-hf-id="hf-eyfb" class="w">for</span><span data-hf-id="hf-hlbq" class="w">AI</span><span data-hf-id="hf-9ehc" class="w">agents.</span></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      var host = document.querySelector('[data-composition-id="02-brand"]');
+      var q = function (id) { return host.querySelector('[id="' + id + '"]'); };
+      var lockup = q("02-brand-lockup");
+      var mark = q("02-brand-mark");
+      var ring = q("02-brand-ring");
+      var pupil = q("02-brand-pupil");
+      var glint = q("02-brand-glint");
+      var word = q("02-brand-word");
+      var words = host.querySelectorAll('[id="02-brand-tagline"] .w');
+
+      // mark sits dead-center until the wordmark arrives: half of (gap + wordmark box)
+      var CENTER_OFFSET = (48 + 520) / 2;
+
+      var tl = gsap.timeline({ paused: true });
+
+      // Scene 1 (0.0-0.8s): spring-bloom from zero, dead-center, with a hint of rotation
+      tl.fromTo(mark,
+        { x: CENTER_OFFSET, scale: 0, rotation: -18, opacity: 0 },
+        { x: CENTER_OFFSET, scale: 1, rotation: 0, opacity: 1, duration: 0.62, ease: "back.out(1.4)" },
+        0);
+      // iris ring draws on as a stroke sweep while it scales
+      tl.fromTo(ring,
+        { attr: { "stroke-dashoffset": 53.41 } },
+        { attr: { "stroke-dashoffset": 0 }, duration: 0.6, ease: "power2.inOut" },
+        0.04);
+      // pupil drops in last
+      tl.fromTo(pupil,
+        { scale: 0, opacity: 0, svgOrigin: "12 12" },
+        { scale: 1, opacity: 1, svgOrigin: "12 12", duration: 0.24, ease: "power3.out" },
+        0.46);
+      // highlight dot appears, then blinks once
+      tl.fromTo(glint,
+        { scale: 0, opacity: 0, svgOrigin: "13.3 10.7" },
+        { scale: 1, opacity: 1, svgOrigin: "13.3 10.7", duration: 0.12, ease: "power2.out" },
+        0.62);
+      tl.fromTo(glint,
+        { scaleY: 1 },
+        { scaleY: 0.1, duration: 0.06, ease: "power2.in", immediateRender: false },
+        0.74);
+      tl.fromTo(glint,
+        { scaleY: 0.1 },
+        { scaleY: 1, duration: 0.08, ease: "power2.out", immediateRender: false },
+        0.8);
+
+      // Scene 2 (0.8-1.6s): mark slides left, wordmark wipes in left-to-right to its right
+      tl.fromTo(mark,
+        { x: CENTER_OFFSET },
+        { x: 0, duration: 0.62, ease: "power3.inOut", immediateRender: false },
+        0.82);
+      tl.fromTo(word,
+        { clipPath: "inset(-10% 100% -20% 0%)", x: -40 },
+        { clipPath: "inset(-10% -10% -20% 0%)", x: 0, duration: 0.6, ease: "power3.out" },
+        0.9);
+
+      // Scene 3 (1.6-3.0s): tagline rises in, word-stagger; lockup holds (near-imperceptible scale-up)
+      words.forEach(function (el, i) {
+        tl.fromTo(el,
+          { y: 44, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" },
+          1.6 + i * 0.065);
+      });
+      tl.fromTo(lockup,
+        { scale: 1 },
+        { scale: 1.015, duration: 1.4, ease: "none" },
+        1.6);
+
+      // pad the timeline to the full fixed duration
+      tl.set({}, {}, 3);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["02-brand"] = tl;
+    })();
+  </script>
+</template>

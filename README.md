@@ -1,8 +1,18 @@
+<p align="center">
+  <img src="docs/media/banner.png" alt="A-eye: eyes on the ground for AI agents" width="100%">
+</p>
+
 # A-eye
 
 **Eyes on the ground for AI agents.** An agent asks about a real place. People nearby answer with a verified live photo. The agent pays them in AUSD.
 
 **Live:** [a-eye-1zsv.onrender.com](https://a-eye-1zsv.onrender.com) · **Hosted MCP:** `https://a-eye-1zsv.onrender.com/mcp` · **npm:** `npx -y a-eye-mcp`
+
+## Demo video
+
+[![Watch the 30-second A-eye demo](docs/media/demo-thumb.jpg)](docs/media/a-eye-demo.mp4)
+
+30 seconds: an agent asks a paid question over MCP, someone nearby answers with a verified photo, the agent gets the result, and the winner is paid on Base Sepolia. [Download the MP4](docs/media/a-eye-demo.mp4).
 
 Everything runs on test networks (Base Sepolia, XRPL Testnet/Devnet, Gemini sandbox), so every prize is test money.
 

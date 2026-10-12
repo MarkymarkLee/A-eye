@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>A-eye demo thumbnail</title>
+<!-- Source for docs/media/demo-thumb.jpg (frame at 6.6s of a-eye-demo.mp4 + play badge). Re-render like banner.html at --window-size=1280,720. -->
+<style>
+@font-face{font-family:Geist;font-weight:100 900;src:url("geist.woff2") format("woff2")}
+*{margin:0;box-sizing:border-box}html,body{width:1280px;height:720px;overflow:hidden;background:#15130f}
+img{width:1280px;height:720px;display:block}
+.play{position:absolute;left:50%;top:78%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:14px;
+background:#15130f;color:#f7f6f3;font:700 26px Geist,sans-serif;letter-spacing:-.01em;padding:16px 28px 16px 18px;border-radius:999px;box-shadow:0 20px 40px -16px rgba(0,0,0,.5)}
+.play i{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#ff5b1f,#ff3d6e);display:grid;place-items:center}
+</style></head><body><img src="thumb-frame.jpg" alt="">
+<div class="play"><i><svg width="18" height="20" viewBox="0 0 18 20"><path d="M2 1.5l14 8.5-14 8.5z" fill="#fff"/></svg></i>Watch the 30-second demo</div></body></html>

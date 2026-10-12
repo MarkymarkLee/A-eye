@@ -1,0 +1,180 @@
+<template>
+  <style>
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-fef07dbb0973bf53-s.3p2_lha1f2xer.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-8a480f0b521d4e75-s.1qq4vpdcun5oj.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-53b9e256198e5412-s.390ncx5urfkfu.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7178b3e590c64307-s.21jp631_3pja2.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+    @font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: Geist, sans-serif;
+      color: #F7F6F3;
+    }
+    #hook01-bg {
+      position: absolute;
+      inset: 0;
+      background: #15130F;
+    }
+    #hook01-stage {
+      position: absolute;
+      inset: 0;
+    }
+    /* Scene 1 — line 1, centered, section-headline */
+    #hook01-line1 {
+      position: absolute;
+      left: 15cqw;
+      right: 15cqw;
+      top: 410px;
+      text-align: center;
+      font-size: 4.2cqw;
+      font-weight: 700;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      color: #F7F6F3;
+    }
+    #hook01-line1 .hook01-w {
+      display: inline-block;
+      margin: 0 0.12em;
+    }
+    /* Scene 2/3 — fixed words + slot, centered-left */
+    #hook01-line2 {
+      position: absolute;
+      left: 8cqw;
+      top: 300px;
+      height: 120px;
+      white-space: nowrap;
+      font-size: 5.2cqw;
+      font-weight: 700;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+    }
+    #hook01-fixed {
+      display: inline-block;
+      vertical-align: top;
+      color: #F7F6F3;
+    }
+    #hook01-slot {
+      position: relative;
+      display: inline-block;
+      vertical-align: top;
+      width: 0;
+      height: 1em;
+      margin-left: 0.26em;
+    }
+    .hook01-q {
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #FF5B1F;
+    }
+    #hook01-blank {
+      position: absolute;
+      left: 0.1cqw;
+      top: 4.6cqw;
+      width: 22cqw;
+      height: 0.35cqw;
+      background: #FF5B1F;
+      opacity: 0.55;
+    }
+    /* Scene 4 — jumbo payoff */
+    #hook01-now {
+      position: absolute;
+      left: 8cqw;
+      top: 460px;
+      font-size: 9cqw;
+      font-weight: 700;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      padding-bottom: 0.08em;
+      background: linear-gradient(90deg, #FF5B1F 0%, #FF3D6E 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    #hook01-rule {
+      position: absolute;
+      left: 8.2cqw;
+      top: 668px;
+      width: 46cqw;
+      height: 0.25cqw;
+      background: #FF5B1F;
+    }
+  </style>
+
+  <div data-hf-id="hf-r72u" id="root" data-composition-id="01-hook" data-start="0" data-duration="4.4" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-8y86" id="hook01-bg" class="clip" data-start="0" data-duration="4.4" data-track-index="0"></div>
+
+    <div data-hf-id="hf-i7d6" id="hook01-stage" class="clip" data-start="0" data-duration="4.4" data-track-index="1">
+      <div data-hf-id="hf-coz5" id="hook01-line1">
+        <span data-hf-id="hf-nqca" class="hook01-w">Your</span><span data-hf-id="hf-0mof" class="hook01-w">AI</span><span data-hf-id="hf-l6ty" class="hook01-w">agent</span><span data-hf-id="hf-j6r9" class="hook01-w">can</span><span data-hf-id="hf-by8p" class="hook01-w">search</span><span data-hf-id="hf-exjg" class="hook01-w">the</span><span data-hf-id="hf-d8mc" class="hook01-w">whole</span><span data-hf-id="hf-h8al" class="hook01-w">web.</span>
+      </div>
+
+      <div data-hf-id="hf-gn36" id="hook01-line2">
+        <div data-hf-id="hf-ofbp" id="hook01-fixed">But can it see</div><div data-hf-id="hf-25hm" id="hook01-slot">
+          <div data-hf-id="hf-yat4" id="hook01-blank"></div>
+          <div data-hf-id="hf-ijmp" class="hook01-q" id="hook01-q1">the coffee line?</div>
+          <div data-hf-id="hf-74nb" class="hook01-q" id="hook01-q2">if it's open?</div>
+          <div data-hf-id="hf-2npy" class="hook01-q" id="hook01-q3">the crowd?</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-yttt" id="hook01-now">right now?</div>
+      <div data-hf-id="hf-hp1g" id="hook01-rule"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      var q = function (s) { return document.querySelectorAll('[data-composition-id="01-hook"] ' + s); };
+
+      // Initial states (seek-safe: set at t=0 on the timeline)
+      tl.set(q("#hook01-line2, #hook01-blank, .hook01-q, #hook01-now, #hook01-rule"), { autoAlpha: 0 }, 0);
+      tl.set(q("#hook01-rule"), { scaleX: 0, transformOrigin: "0% 50%" }, 0);
+
+      // Macro: slow push under the whole shot
+      tl.fromTo(q("#hook01-stage"), { scale: 1 }, { scale: 1.035, duration: 4, ease: "none", transformOrigin: "30% 45%" }, 0);
+
+      // Scene 1 (0.0–1.2): line 1 rises in word-by-word
+      tl.fromTo(q("#hook01-line1 .hook01-w"),
+        { autoAlpha: 0, y: 40 },
+        { autoAlpha: 1, y: 0, duration: 0.38, ease: "power3.out", stagger: 0.07 }, 0.05);
+
+      // Scene 2 (1.2–1.5): hard cut — line 1 out, fixed words + empty slot land
+      tl.set(q("#hook01-line1"), { autoAlpha: 0 }, 1.2);
+      tl.set(q("#hook01-line2"), { autoAlpha: 1 }, 1.2);
+      tl.fromTo(q("#hook01-fixed"), { y: 14 }, { y: 0, duration: 0.14, ease: "power2.out" }, 1.2);
+      tl.set(q("#hook01-blank"), { autoAlpha: 1 }, 1.2);
+      tl.fromTo(q("#hook01-blank"), { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.18, ease: "power2.out" }, 1.22);
+
+      // Scene 3 (1.5–2.9): slot hard-cut swaps, tiny vertical snap; fixed words never move
+      var swaps = [["#hook01-q1", 1.5], ["#hook01-q2", 1.95], ["#hook01-q3", 2.4]];
+      tl.set(q("#hook01-blank"), { autoAlpha: 0 }, 1.5);
+      swaps.forEach(function (s, i) {
+        if (i > 0) tl.set(q(swaps[i - 1][0]), { autoAlpha: 0 }, s[1]);
+        tl.set(q(s[0]), { autoAlpha: 1 }, s[1]);
+        tl.fromTo(q(s[0]), { y: -16 }, { y: 0, duration: 0.1, ease: "power2.out" }, s[1]);
+      });
+
+      // Scene 4 (2.9–4.0): slot clears, "right now?" spring-pops in, underline draws, hold
+      tl.set(q("#hook01-q3"), { autoAlpha: 0 }, 2.9);
+      tl.fromTo(q("#hook01-now"),
+        { autoAlpha: 0, scale: 0.55, transformOrigin: "0% 60%" },
+        { autoAlpha: 1, scale: 1, duration: 0.55, ease: "back.out(2.2)" }, 2.9);
+      tl.set(q("#hook01-rule"), { autoAlpha: 1 }, 3.25);
+      tl.to(q("#hook01-rule"), { scaleX: 1, duration: 0.4, ease: "power3.inOut" }, 3.25);
+      tl.to(q("#hook01-now"), { scale: 1.015, duration: 0.55, ease: "sine.inOut" }, 3.45);
+
+      window.__timelines["01-hook"] = tl;
+    })();
+  </script>
+</template>

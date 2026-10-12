@@ -1,0 +1,334 @@
+{
+  "typography": [
+    {
+      "role": "display",
+      "fontFamily": "Geist",
+      "fontSize": "36px",
+      "fontWeight": "600",
+      "lineHeight": "39.6px",
+      "letterSpacing": "-0.9px",
+      "color": "#15130F",
+      "sampleText": "Answer a question, win the prize."
+    },
+    {
+      "role": "heading",
+      "fontFamily": "Geist",
+      "fontSize": "30px",
+      "fontWeight": "600",
+      "lineHeight": "33px",
+      "letterSpacing": "-0.75px",
+      "color": "#15130F",
+      "sampleText": "AI agents have questions about real places."
+    },
+    {
+      "role": "body",
+      "fontFamily": "Geist",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "26px",
+      "letterSpacing": "normal",
+      "color": "#5F5A52",
+      "sampleText": "“Is there a line at the coffee cart?” “Is the library open?”"
+    },
+    {
+      "role": "link",
+      "fontFamily": "Geist",
+      "fontSize": "14px",
+      "fontWeight": "500",
+      "lineHeight": "21px",
+      "letterSpacing": "normal",
+      "color": "#15130F",
+      "sampleText": "Nearby"
+    },
+    {
+      "role": "heading-2",
+      "fontFamily": "Geist",
+      "fontSize": "13px",
+      "fontWeight": "600",
+      "lineHeight": "19.5px",
+      "letterSpacing": "1.04px",
+      "color": "#5F5A52",
+      "sampleText": "Open now"
+    }
+  ],
+  "spacing": {
+    "observed": [
+      4,
+      8,
+      10,
+      12,
+      14,
+      16,
+      20,
+      24
+    ],
+    "baseUnit": 4
+  },
+  "radius": [
+    "20px",
+    "3.35544e+07px"
+  ],
+  "shadows": [
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.04) 0px 1px 0px 0px, rgba(60, 48, 30, 0.22) 0px 10px 30px -14px",
+      "count": 12
+    },
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(255, 255, 255, 0.25) 0px 1px 0px 0px inset, rgb(255, 91, 31) 0px 10px 24px -12px",
+      "count": 1
+    },
+    {
+      "value": "rgba(21, 19, 15, 0.04) 0px 1px 0px 0px, rgba(60, 48, 30, 0.22) 0px 10px 30px -14px",
+      "count": 1
+    },
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+      "count": 1
+    },
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.03) 0px 2px 0px 0px, rgba(60, 48, 30, 0.35) 0px 24px 60px -24px",
+      "count": 1
+    }
+  ],
+  "buttons": [
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#5F5A52",
+      "padding": "0px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(95, 90, 82)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "40px"
+    },
+    {
+      "label": "20",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#15130F",
+      "padding": "0px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(21, 19, 15)",
+      "boxShadow": "none",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "height": "48px"
+    },
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#15130F",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(21, 19, 15)",
+      "boxShadow": "none",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "height": "36px"
+    },
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#15130F",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "",
+      "boxShadow": "none",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "height": "36px"
+    },
+    {
+      "label": "Test money",
+      "background": "oklab(0.939055 -0.0120458 0.00515587)",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#157347",
+      "padding": "0px 10px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(21, 115, 71)",
+      "boxShadow": "none",
+      "fontSize": "12px",
+      "fontWeight": "500",
+      "height": "24px"
+    },
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#15130F",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgb(21, 19, 15)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "24px"
+    }
+  ],
+  "cards": [
+    {
+      "label": "card",
+      "background": "#FFFFFF",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#15130F",
+      "padding": "12px 16px 12px 12px",
+      "borderRadius": "20px",
+      "border": "0px solid rgb(21, 19, 15)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.04) 0px 1px 0px 0px, rgba(60, 48, 30, 0.22) 0px 10px 30px -14px",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "92.125px"
+    }
+  ],
+  "nav": {
+    "label": "navigation",
+    "background": "oklab(0.973071 -0.0000594854 0.00413698 / 0.8)",
+    "backgroundImage": "",
+    "backdropFilter": "blur(24px)",
+    "color": "#15130F",
+    "padding": "0px",
+    "borderRadius": "0px",
+    "border": "",
+    "boxShadow": "none",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "height": "61px"
+  },
+  "chips": [
+    {
+      "label": "Skip to content",
+      "background": "#15130F",
+      "color": "#F7F6F3",
+      "padding": "8px 16px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(247, 246, 243)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "16px"
+    },
+    {
+      "label": "Results",
+      "background": "#FFFFFF",
+      "color": "#5F5A52",
+      "padding": "6px 12px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(95, 90, 82)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.03) 0px 2px 0px 0px, rgba(60, 48, 30, 0.35) 0px 24px 60px -24px",
+      "fontSize": "12.5px",
+      "fontWeight": "600",
+      "height": "32px"
+    },
+    {
+      "label": "6 open nearby",
+      "background": "oklab(0.999994 0.0000455678 0.0000200868 / 0.9)",
+      "color": "#15130F",
+      "padding": "6px 12px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(21, 19, 15)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.04) 0px 1px 0px 0px, rgba(60, 48, 30, 0.22) 0px 10px 30px -14px",
+      "fontSize": "13px",
+      "fontWeight": "600",
+      "height": "31.5px"
+    },
+    {
+      "label": "0.55 AUSD up for grabs",
+      "background": "#FFF0E8",
+      "color": "#B33A0B",
+      "padding": "0px 12px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(179, 58, 11)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "500",
+      "height": "28px"
+    }
+  ],
+  "statCells": [],
+  "tabs": [
+    {
+      "label": "Results",
+      "background": "#FFFFFF",
+      "color": "#5F5A52",
+      "padding": "6px 12px",
+      "borderRadius": "3.35544e+07px",
+      "border": "0px solid rgb(95, 90, 82)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.03) 0px 2px 0px 0px, rgba(60, 48, 30, 0.35) 0px 24px 60px -24px",
+      "fontSize": "12.5px",
+      "fontWeight": "600",
+      "height": "32px"
+    },
+    {
+      "label": "0.2",
+      "background": "transparent",
+      "color": "#FFFFFF",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgb(255, 255, 255)",
+      "boxShadow": "none",
+      "fontSize": "20px",
+      "fontWeight": "700",
+      "height": "20px"
+    },
+    {
+      "label": "52:00 left",
+      "background": "transparent",
+      "color": "#5F5A52",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgb(95, 90, 82)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "height": "19.5px"
+    },
+    {
+      "label": "2:02 left",
+      "background": "transparent",
+      "color": "#B33A0B",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgb(179, 58, 11)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "600",
+      "height": "19.5px"
+    }
+  ],
+  "backgrounds": [
+    {
+      "value": "radial-gradient(60% 50% at 15% 10%, oklab(0.683495 0.165553 0.129171 / 0.22), rgba(0, 0, 0, 0) 70%), radial-gradient(50% 45% at 90% 20%, oklab(0.665129 0.222946 0.047005 / 0.16), rgba(0, 0, 0, 0) 70%), radial-gradient(60% 50% at 50% 100%, oklab(0.607113 -0.0357673 -0.194632 / 0.14), rgba(0, 0, 0, 0) 70%), none",
+      "area": 2073600
+    }
+  ],
+  "glass": [
+    {
+      "backdropFilter": "blur(24px)",
+      "background": "oklab(0.973071 -0.0000594854 0.00413698 / 0.8)",
+      "border": "",
+      "borderRadius": "0px",
+      "boxShadow": "",
+      "area": 117120
+    },
+    {
+      "backdropFilter": "blur(8px)",
+      "background": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+      "border": "0px solid rgb(21, 19, 15)",
+      "borderRadius": "40px",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(227, 224, 217) 0px 0px 0px 1px, rgba(21, 19, 15, 0.03) 0px 2px 0px 0px, rgba(60, 48, 30, 0.35) 0px 24px 60px -24px",
+      "area": 90000
+    }
+  ]
+}

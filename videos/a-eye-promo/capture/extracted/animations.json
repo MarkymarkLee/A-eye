@@ -1,0 +1,302 @@
+{
+  "summary": {
+    "webAnimations": 7,
+    "cssDeclarations": 54,
+    "scrollTargets": 21,
+    "cdpAnimations": 36,
+    "canvases": 1
+  },
+  "namedAnimations": [
+    "pulse-ring"
+  ],
+  "scrollTriggeredElements": 21,
+  "representativeAnimations": [
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.inset-0.rounded-full",
+      "targetRect": {
+        "x": 1106.7679443359375,
+        "y": 508.7679443359375,
+        "width": 114.464111328125,
+        "height": 114.464111328125,
+        "top": 508.7679443359375,
+        "right": 1221.2320556640625,
+        "bottom": 623.2320556640625,
+        "left": 1106.7679443359375
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.inset-0.rounded-full",
+      "targetRect": {
+        "x": 1158.7679443359375,
+        "y": 558.7679443359375,
+        "width": 114.464111328125,
+        "height": 114.464111328125,
+        "top": 558.7679443359375,
+        "right": 1273.2320556640625,
+        "bottom": 673.2320556640625,
+        "left": 1158.7679443359375
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.inset-0.animate-pulse-ring",
+      "targetRect": {
+        "x": 498.53155517578125,
+        "y": 79.28153991699219,
+        "width": 18.9368896484375,
+        "height": 18.936920166015625,
+        "top": 79.28153991699219,
+        "right": 517.4684448242188,
+        "bottom": 98.21846008300781,
+        "left": 498.53155517578125
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.inset-0.animate-pulse-ring",
+      "targetRect": {
+        "x": 18.689701080322266,
+        "y": 327.752197265625,
+        "width": 18.62059783935547,
+        "height": 18.62060546875,
+        "top": 327.752197265625,
+        "right": 37.310298919677734,
+        "bottom": 346.372802734375,
+        "left": 18.689701080322266
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.left-1/2.top-full",
+      "targetRect": {
+        "x": 865.5946044921875,
+        "y": 424.8446350097656,
+        "width": 56.810791015625,
+        "height": 56.81072998046875,
+        "top": 424.8446350097656,
+        "right": 922.4053955078125,
+        "bottom": 481.6553649902344,
+        "left": 865.5946044921875
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.left-1/2.top-full",
+      "targetRect": {
+        "x": 991.5946044921875,
+        "y": 448.8446350097656,
+        "width": 56.810791015625,
+        "height": 56.81072998046875,
+        "top": 448.8446350097656,
+        "right": 1048.4053955078125,
+        "bottom": 505.6553649902344,
+        "left": 991.5946044921875
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    },
+    {
+      "type": "CSSAnimation",
+      "playState": "running",
+      "animationName": "pulse-ring",
+      "targetSelector": "span.absolute.left-1/2.top-full",
+      "targetRect": {
+        "x": 949.5946044921875,
+        "y": 352.8446350097656,
+        "width": 56.810791015625,
+        "height": 56.81072998046875,
+        "top": 352.8446350097656,
+        "right": 1006.4053955078125,
+        "bottom": 409.6553649902344,
+        "left": 949.5946044921875
+      },
+      "keyframes": [
+        {
+          "offset": 0,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(0.6)",
+          "opacity": "0.7",
+          "computedOffset": 0
+        },
+        {
+          "offset": 1,
+          "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "composite": "auto",
+          "transform": "scale(2.4)",
+          "opacity": "0",
+          "computedOffset": 1
+        }
+      ],
+      "timing": {
+        "duration": 2200,
+        "delay": 0,
+        "iterations": null,
+        "easing": "linear",
+        "direction": "normal"
+      }
+    }
+  ]
+}

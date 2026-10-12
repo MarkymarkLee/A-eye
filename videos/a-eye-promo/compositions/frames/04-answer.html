@@ -1,0 +1,121 @@
+<template>
+<style>
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-fef07dbb0973bf53-s.3p2_lha1f2xer.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-8a480f0b521d4e75-s.1qq4vpdcun5oj.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-53b9e256198e5412-s.390ncx5urfkfu.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7178b3e590c64307-s.21jp631_3pja2.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-5ce348bf30bf5439-s.31988l_ccedte.woff2")format("woff2");unicode-range:U+460-52F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-4fa387ec64143e14-s.2tuy5pz7dlieh.woff2")format("woff2");unicode-range:U+301,U+400-45F,U+490-491,U+4B0-4B1,U+2116}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-6306c77e7c8268e4-s.2dbetqa9o8jxf.woff2")format("woff2");unicode-range:U+2000-2001,U+2004-2008,U+200A,U+23B8-23BD,U+2500-259F}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-7d817b4c03b0c5f1-s.1uyisp29ctx0d.woff2")format("woff2");unicode-range:U+102-103,U+110-111,U+128-129,U+168-169,U+1A0-1A1,U+1AF-1B0,U+300-301,U+303-304,U+308-309,U+323,U+329,U+1EA0-1EF9,U+20AB}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-bbc41e54d2fcbd21-s.1rgnod-3esatf.woff2")format("woff2");unicode-range:U+100-2BA,U+2BD-2C5,U+2C7-2CC,U+2CE-2D7,U+2DD-2FF,U+304,U+308,U+329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:Geist Mono;font-style:normal;font-weight:100 900;font-display:swap;src:url("assets/fonts/captured-797e433ab948586e-s.p.0r6juujl39pe6.woff2")format("woff2");unicode-range:U+??,U+131,U+152-153,U+2BB-2BC,U+2C6,U+2DA,U+2DC,U+304,U+308,U+329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+</style>
+<style>
+  #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: Geist, sans-serif; color: #15130F; }
+  .f04-answer-bg { position: absolute; inset: 0; background: #F7F6F3; }
+  .f04-answer-label { position: absolute; left: 96px; top: 28px; font: 700 22px/1 Geist, sans-serif; letter-spacing: 5px; text-transform: uppercase; color: #B33A0B; white-space: nowrap; }
+  /* phone — binding handoff geometry (shared with frame 05) */
+  .f04-answer-phone { position: absolute; left: 354px; top: 70px; width: 412px; height: 860px; box-sizing: border-box; border-radius: 64px; background: #15130F; box-shadow: 0 40px 80px -30px rgba(21,19,15,.45); }
+  .f04-answer-screen { position: absolute; inset: 14px; border-radius: 50px; overflow: hidden; background: #F7F6F3; }
+  .f04-answer-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+  /* pin label overlay: screenshot box x14-187, y457-519 @ 384/780 = 0.4923 */
+  .f04-answer-pin { position: absolute; left: 6.9px; top: 225px; width: 85.2px; height: 30.5px; border-radius: 15.25px; background: #FF5B1F; color: #15130F; font: 600 11.8px/30.5px Geist, sans-serif; text-align: center; white-space: nowrap; transform-origin: 50% 100%; }
+  .f04-answer-flash { position: absolute; inset: 0; background: #FFFFFF; opacity: 0; }
+  .f04-answer-photo { position: absolute; left: 20px; right: 20px; top: 470px; height: 116px; box-sizing: border-box; background: #FFFFFF; border-radius: 16px; border-top: 4px solid #FF5B1F; padding: 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 18px 30px -18px rgba(21,19,15,.4); transform-origin: 50% 50%; }
+  .f04-answer-thumb { flex: 0 0 82px; height: 82px; border-radius: 10px; background: linear-gradient(135deg, #B33A0B 0%, #5F5A52 70%, #15130F 100%); position: relative; overflow: hidden; }
+  .f04-answer-thumb::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: 12px; height: 26px; background: #FFCFBD; opacity: .55; border-radius: 4px; }
+  .f04-answer-meta { display: flex; flex-direction: column; gap: 10px; }
+  .f04-answer-stamp { font: 500 13px/1 "Geist Mono", monospace; color: #5F5A52; letter-spacing: .5px; }
+  .f04-answer-chip { align-self: flex-start; background: #FF5B1F; color: #FFFFFF; font: 700 20px/1 Geist, sans-serif; padding: 9px 14px; border-radius: 999px; letter-spacing: -0.01em; }
+  /* right column */
+  .f04-answer-head { position: absolute; left: 920px; top: 170px; width: 900px; }
+  .f04-answer-line { font: 700 80px/1.06 Geist, sans-serif; letter-spacing: -0.03em; white-space: nowrap; }
+  .f04-answer-live { background: linear-gradient(90deg, #FF5B1F, #FF3D6E); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .f04-answer-checks { position: absolute; left: 920px; top: 420px; width: 780px; }
+  .f04-answer-row { position: relative; height: 96px; margin-bottom: 22px; background: #FFFFFF; border-left: 6px solid #FF5B1F; display: flex; align-items: center; gap: 26px; padding: 0 30px 0 26px; box-sizing: border-box; }
+  .f04-answer-tick { flex: 0 0 48px; height: 48px; background: #FF5B1F; display: flex; align-items: center; justify-content: center; }
+  .f04-answer-tick svg { width: 30px; height: 30px; overflow: visible; }
+  .f04-answer-tick path { fill: none; stroke: #FFFFFF; stroke-width: 4.5; stroke-linecap: square; stroke-linejoin: miter; stroke-dasharray: 32; stroke-dashoffset: 32; }
+  .f04-answer-rowtext { font: 700 40px/1 Geist, sans-serif; letter-spacing: -0.02em; white-space: nowrap; }
+  .f04-answer-rowtext em { font-style: normal; color: #5F5A52; font-weight: 500; }
+</style>
+
+<div data-hf-id="hf-iucp" id="root" data-composition-id="04-answer" data-width="1920" data-height="1080" data-start="0" data-duration="5">
+  <div data-hf-id="hf-ay01" class="clip f04-answer-bg" id="f04-answer-bg" data-start="0" data-duration="5" data-track-index="0"></div>
+
+  <div data-hf-id="hf-ym5t" class="clip f04-answer-label" id="f04-answer-label" data-start="0" data-duration="5" data-track-index="1">2 · People nearby answer</div>
+
+  <div data-hf-id="hf-2w43" class="clip f04-answer-phone" id="f04-answer-phone" data-start="0" data-duration="5" data-track-index="2">
+    <div data-hf-id="hf-shlu" class="f04-answer-screen">
+      <img data-hf-id="hf-52lt" class="f04-answer-shot" src="assets/app-home.png" alt="A-eye app: campus map with prize pin">
+      <div data-hf-id="hf-clpq" class="f04-answer-pin" id="f04-answer-pin">0.10 AUSD</div>
+      <div data-hf-id="hf-sd4i" class="f04-answer-photo" id="f04-answer-photo">
+        <div data-hf-id="hf-x4gu" class="f04-answer-thumb"></div>
+        <div data-hf-id="hf-hz8l" class="f04-answer-meta">
+          <div data-hf-id="hf-zt5j" class="f04-answer-stamp">photo · 12:04</div>
+          <div data-hf-id="hf-0tbj" class="f04-answer-chip">No line</div>
+        </div>
+      </div>
+      <div data-hf-id="hf-xz0a" class="f04-answer-flash" id="f04-answer-flash"></div>
+    </div>
+  </div>
+
+  <div data-hf-id="hf-l8de" class="clip f04-answer-head" id="f04-answer-head" data-start="0" data-duration="5" data-track-index="3">
+    <div data-hf-id="hf-pxip" class="f04-answer-line" id="f04-answer-l1">Walk to the pin.</div>
+    <div data-hf-id="hf-rx3v" class="f04-answer-line" id="f04-answer-l2">Snap a <span data-hf-id="hf-ffvh" class="f04-answer-live">live</span> photo.</div>
+  </div>
+
+  <div data-hf-id="hf-0e0d" class="clip f04-answer-checks" id="f04-answer-checks" data-start="0" data-duration="5" data-track-index="4">
+    <div data-hf-id="hf-qp5t" class="f04-answer-row" id="f04-answer-r1">
+      <div data-hf-id="hf-oqle" class="f04-answer-tick" id="f04-answer-t1"><svg data-hf-id="hf-u3w7" viewBox="0 0 30 30"><path data-hf-id="hf-8zjw" id="f04-answer-p1" d="M5 15.5 L12 22.5 L25 8.5" /></svg></div>
+      <div data-hf-id="hf-gg1j" class="f04-answer-rowtext">GPS within 75 m</div>
+    </div>
+    <div data-hf-id="hf-un9u" class="f04-answer-row" id="f04-answer-r2">
+      <div data-hf-id="hf-kshd" class="f04-answer-tick" id="f04-answer-t2"><svg data-hf-id="hf-3l13" viewBox="0 0 30 30"><path data-hf-id="hf-jv1j" id="f04-answer-p2" d="M5 15.5 L12 22.5 L25 8.5" /></svg></div>
+      <div data-hf-id="hf-5u8l" class="f04-answer-rowtext">Shot in-app, under 2 minutes</div>
+    </div>
+    <div data-hf-id="hf-yldv" class="f04-answer-row" id="f04-answer-r3">
+      <div data-hf-id="hf-k0tk" class="f04-answer-tick" id="f04-answer-t3"><svg data-hf-id="hf-36q2" viewBox="0 0 30 30"><path data-hf-id="hf-fwxi" id="f04-answer-p3" d="M5 15.5 L12 22.5 L25 8.5" /></svg></div>
+      <div data-hf-id="hf-9pcg" class="f04-answer-rowtext">Unique photo <em data-hf-id="hf-tug6">· SHA-256</em></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+  (function () {
+    window.__timelines = window.__timelines || {};
+    var tl = gsap.timeline({ paused: true });
+    var q = function (id) { return document.getElementById("f04-answer-" + id); };
+
+    // Scene 1 (0.0–0.8): label + phone coasts up into the left third and settles at handoff geometry
+    tl.fromTo(q("label"), { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 0.05);
+    tl.fromTo(q("phone"), { y: 620, rotation: 0, scale: 1, opacity: 1 }, { y: 0, rotation: 0, scale: 1, opacity: 1, duration: 0.8, ease: "power3.out" }, 0);
+    // pin label shows 0.10 AUSD and pulses once
+    tl.fromTo(q("pin"), { scale: 1 }, { scale: 1.22, duration: 0.18, ease: "power2.out" }, 0.62);
+    tl.to(q("pin"), { scale: 1, duration: 0.3, ease: "power2.inOut" }, 0.8);
+
+    // Scene 2 (0.8–1.8): headline lines rise in; shutter flash; photo chip pops onto phone
+    tl.fromTo(q("l1"), { opacity: 0, y: 48 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0.82);
+    tl.fromTo(q("l2"), { opacity: 0, y: 48 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 1.15);
+    tl.fromTo(q("flash"), { opacity: 0 }, { opacity: 0.95, duration: 0.05, ease: "none" }, 1.5);
+    tl.to(q("flash"), { opacity: 0, duration: 0.28, ease: "power2.out" }, 1.56);
+    tl.fromTo(q("photo"), { opacity: 0, scale: 0.6, y: 30 }, { opacity: 1, scale: 1, y: 0, duration: 0.45, ease: "back.out(1.8)" }, 1.6);
+
+    // Scene 3 (1.8–4.0): verification rows cascade in, checks flip on
+    [["r1", "t1", "p1", 1.9], ["r2", "t2", "p2", 2.5], ["r3", "t3", "p3", 3.1]].forEach(function (r) {
+      tl.fromTo(q(r[0]), { opacity: 0, x: 70 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, r[3]);
+      tl.fromTo(q(r[1]), { scale: 0.3, rotation: -90 }, { scale: 1, rotation: 0, duration: 0.4, ease: "back.out(2.2)" }, r[3] + 0.28);
+      tl.fromTo(q(r[2]), { strokeDashoffset: 32 }, { strokeDashoffset: 0, duration: 0.25, ease: "power2.out" }, r[3] + 0.4);
+    });
+
+    // Scene 4 (4.0–5.0): resolved hold — phone stays at handoff position (scale 1, rotation 0, opacity 1)
+    tl.set(q("phone"), { y: 0, x: 0, scale: 1, rotation: 0, opacity: 1 }, 4.0);
+    tl.to({}, { duration: 1.0 }, 4.0);
+
+    window.__timelines["04-answer"] = tl;
+  })();
+</script>
+</template>
