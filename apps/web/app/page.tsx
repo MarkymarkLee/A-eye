@@ -1,5 +1,10 @@
 import { NearbyView } from "@/components/nearby-view";
+import { Page } from "@/components/motion/page";
 
 export default function Home() {
-  return <NearbyView />;
+  return (
+    <Page>
+      <NearbyView />
+    </Page>
+  );
 }

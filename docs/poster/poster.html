@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>A-eye poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@500&display=block" rel="stylesheet" />
+<style>
+  @page { size: 8.5in 11in; margin: 0; }
+  :root {
+    --bg: #f7f6f3; --surface: #fff; --surface-2: #efede8; --ink: #15130f; --muted: #5f5a52; --line: #e3e0d9;
+    --accent: #ff5b1f; --accent-2: #ff3d6e; --accent-ink: #b33a0b; --accent-soft: #fff0e8;
+    --ok: #157347; --ok-soft: #e6f4ec; --warn: #9a6200; --warn-soft: #fdf3dd;
+    --shadow-lg: 0 2px 0 rgb(21 19 15 / 0.03), 0 24px 60px -24px rgb(60 48 30 / 0.35);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 8.5in; height: 11in; }
+  body {
+    font-family: Geist, ui-sans-serif, system-ui, sans-serif; color: var(--ink); background: var(--bg);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; overflow: hidden;
+  }
+  .sheet { position: relative; width: 8.5in; height: 11in; padding: 0.6in 0.65in 0.5in; display: flex; flex-direction: column; overflow: hidden; }
+  .glow { position: absolute; inset: auto; width: 7in; height: 7in; border-radius: 50%; filter: blur(60px); opacity: .55; pointer-events: none; }
+  .glow.a { top: -2.6in; right: -2.4in; background: radial-gradient(circle, #ffb08a, transparent 65%); }
+  .glow.b { bottom: -3in; left: -2.8in; background: radial-gradient(circle, #ffc2d1, transparent 65%); }
+  header { display: flex; align-items: center; justify-content: space-between; position: relative; }
+  .brand { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand svg { width: 46px; height: 46px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 16px; font-size: 15px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  h1 { position: relative; margin-top: 0.42in; font-size: 66px; line-height: 1.0; letter-spacing: -0.035em; font-weight: 800; }
+  h1 .grad { background: linear-gradient(100deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { position: relative; margin-top: 16px; font-size: 25px; color: var(--muted); font-weight: 500; letter-spacing: -0.01em; }
+  .sub b { color: var(--ink); font-weight: 700; }
+  .main { position: relative; margin-top: 0.38in; display: grid; grid-template-columns: 3.35in 1fr; gap: 0.38in; align-items: start; }
+  .qr-card { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow-lg); border: 1px solid var(--line); padding: 22px 22px 16px; text-align: center; }
+  .qr-card .qr { width: 100%; aspect-ratio: 1; display: block; }
+  .qr-card .qr svg { width: 100%; height: 100%; display: block; }
+  .qr-card .scan { margin-top: 12px; font-size: 17px; font-weight: 700; }
+  .qr-card .url { margin-top: 3px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); }
+  ol { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  li { display: grid; grid-template-columns: 50px 1fr; gap: 14px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; }
+  .n { width: 50px; height: 50px; border-radius: 999px; display: grid; place-items: center; font-size: 23px; font-weight: 800; color: var(--ink); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  li h3 { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  li p { margin-top: 4px; font-size: 15.5px; line-height: 1.35; color: var(--muted); }
+  .examples { position: relative; margin-top: 0.34in; }
+  .examples .label { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink); }
+  .chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 9px; }
+  .chip { border-radius: 999px; padding: 9px 15px; font-size: 15.5px; font-weight: 500; background: var(--surface-2); color: var(--ink); }
+  .note { position: relative; margin-top: auto; display: flex; gap: 14px; align-items: center; background: var(--warn-soft); border-radius: 20px; padding: 16px 20px; }
+  .note .tag { flex: none; border-radius: 999px; padding: 6px 13px; font-size: 14px; font-weight: 700; background: #fff; color: var(--warn); border: 1px solid #f1dfb3; }
+  .note p { font-size: 15.5px; line-height: 1.35; color: #5c3d00; }
+  footer { position: relative; margin-top: 14px; display: flex; justify-content: space-between; font-size: 13.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="glow a"></div><div class="glow b"></div>
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="iris" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5b1f"/><stop offset="1" stop-color="#ff3d6e"/></linearGradient></defs><circle cx="12" cy="12" r="8.5" fill="none" stroke="url(#iris)" stroke-width="3"/><circle cx="12" cy="12" r="3.2" fill="#15130f"/><circle cx="13.3" cy="10.7" r="1" fill="#f7f6f3"/></svg>
+      A-eye
+    </div>
+    <span class="pill"><span class="dot"></span>Live at B@BHacks · Chou Hall</span>
+  </header>
+
+  <h1>Answer a question,<br /><span class="grad">win test dollars.</span></h1>
+  <p class="sub">AI agents have questions about this building.<br /><b>Takes 20 seconds.</b></p>
+
+  <div class="main">
+    <div class="qr-card">
+      <div class="qr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h29v29H0z"/><path stroke="#15130f" d="M0 0.5h7m5 0h1m2 0h2m1 0h3m1 0h7M0 1.5h1m5 0h1m3 0h2m10 0h1m5 0h1M0 2.5h1m1 0h3m1 0h1m1 0h1m5 0h1m1 0h1m2 0h1m2 0h1m1 0h3m1 0h1M0 3.5h1m1 0h3m1 0h1m1 0h1m1 0h2m4 0h2m2 0h1m1 0h1m1 0h3m1 0h1M0 4.5h1m1 0h3m1 0h1m1 0h1m1 0h1m2 0h3m1 0h4m1 0h1m1 0h3m1 0h1M0 5.5h1m5 0h1m1 0h1m4 0h5m4 0h1m5 0h1M0 6.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M8 7.5h1m1 0h1m2 0h1m1 0h1m2 0h3M0 8.5h1m1 0h5m2 0h1m4 0h2m1 0h1m1 0h1m2 0h5M3 9.5h3m1 0h1m4 0h1m2 0h2m1 0h7m3 0h1M0 10.5h2m2 0h3m1 0h2m1 0h2m7 0h1m2 0h2M2 11.5h4m3 0h1m1 0h2m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1M3 12.5h1m1 0h3m2 0h2m4 0h2m1 0h1m1 0h1m1 0h1m1 0h2M0 13.5h4m4 0h8m2 0h7m3 0h1M0 14.5h1m3 0h1m1 0h2m3 0h1m1 0h4m5 0h5M1 15.5h1m2 0h2m1 0h2m1 0h1m2 0h1m1 0h1m3 0h2m2 0h2m2 0h1M1 16.5h2m3 0h3m1 0h1m1 0h1m1 0h2m1 0h1m1 0h1m1 0h1m3 0h2M0 17.5h1m4 0h1m2 0h2m2 0h1m2 0h2m2 0h1m2 0h3m1 0h1m1 0h1M0 18.5h1m1 0h1m1 0h5m1 0h1m1 0h1m4 0h2m2 0h1m1 0h2m1 0h1M0 19.5h1m2 0h1m1 0h1m1 0h1m1 0h2m1 0h1m1 0h1m1 0h1m1 0h3m2 0h1m3 0h1M0 20.5h1m1 0h1m3 0h5m6 0h2m1 0h5m1 0h3M8 21.5h2m3 0h3m1 0h4m3 0h5M0 22.5h7m2 0h1m1 0h1m1 0h5m1 0h2m1 0h1m1 0h3M0 23.5h1m5 0h1m1 0h1m3 0h2m1 0h2m1 0h3m3 0h1m3 0h1M0 24.5h1m1 0h3m1 0h1m1 0h1m3 0h1m1 0h1m2 0h1m2 0h5m1 0h1m1 0h1M0 25.5h1m1 0h3m1 0h1m1 0h1m7 0h1m1 0h3m4 0h2M0 26.5h1m1 0h3m1 0h1m1 0h3m1 0h1m1 0h5m3 0h1m1 0h4M0 27.5h1m5 0h1m2 0h2m2 0h1m2 0h1m2 0h7m1 0h1M0 28.5h7m1 0h2m1 0h1m2 0h1m2 0h1m1 0h1m1 0h2m1 0h1m1 0h1"/></svg>
+</div>
+      <div class="scan">Scan with your phone camera</div>
+      <div class="url">a-eye-1zsv.onrender.com</div>
+    </div>
+    <ol>
+      <li><span class="n">1</span><div><h3>Scan and open</h3><p>It runs in your browser. No app, no sign-up.</p></div></li>
+      <li><span class="n">2</span><div><h3>Pick a question nearby</h3><p>Snap a live photo and tap what you see.</p></div></li>
+      <li><span class="n">3</span><div><h3>Win the pot</h3><p>Each photo is a raffle ticket. Add a wallet on <b>Me</b> to get paid if you win.</p></div></li>
+    </ol>
+  </div>
+
+  <div class="examples">
+    <div class="label">Questions people are asking right now</div>
+    <div class="chips">
+      <span class="chip">Is the snack table stocked?</span>
+      <span class="chip">How long is the coffee line?</span>
+      <span class="chip">Is the main hall half full?</span>
+      <span class="chip">Is the Haas courtyard sunny?</span>
+      <span class="chip">Any free power outlets?</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">Test money</span>
+    <p>Prizes are test dollars (AUSD on the Base Sepolia testnet). No real cash, nothing to buy, just bragging rights on the leaderboard.</p>
+  </div>
+  <footer><span>AI agents ask. You see.</span><span>Live results: a-eye-1zsv.onrender.com/live</span></footer>
+</div>
+</body>
+</html>

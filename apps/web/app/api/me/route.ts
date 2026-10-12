@@ -1,30 +1,94 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isSafeText, PayoutRail } from "@a-eye/shared";
 import { currentObserver } from "@/lib/observer";
-import { observerEntries, updateObserver } from "@/lib/store";
+import {
+  maybeIssueObserverCredential,
+  observerCredential,
+  observerEntries,
+  observerPrizes,
+  observerStats,
+  passkeysFor,
+  retryWinnerPayouts,
+  updateObserver,
+} from "@/lib/store";
+import { isClassicAddress } from "@/lib/xrpl";
+import { isCrossSiteRequest } from "@/lib/same-origin";
+import { readBodyText } from "@/lib/body";
+import { passkeyWalletEnabled } from "@/lib/smart-wallet";
 
-const Patch = z.object({
-  display_name: z.string().trim().min(2).max(40).optional(),
-  evm_address: z
-    .string()
-    .trim()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Use a 0x address with 40 hex characters.")
-    .optional()
-    .or(z.literal("")),
-});
+function accountFor(observer: Awaited<ReturnType<typeof currentObserver>>) {
+  const passkeys = passkeysFor(observer.id);
+  const hasPasskeyWallet = Boolean(
+    observer.evm_address && passkeys.some((passkey) => passkey.wallet_address?.toLowerCase() === observer.evm_address!.toLowerCase()),
+  );
+  return {
+    has_passkey: passkeys.length > 0,
+    wallet: observer.evm_address
+      ? { address: observer.evm_address, source: hasPasskeyWallet ? ("passkey" as const) : ("pasted" as const) }
+      : null,
+  };
+}
+
+const Patch = z
+  .object({
+    display_name: z.string().trim().min(2).max(40).refine(isSafeText, "Must not contain control or bidi-override characters.").optional(),
+    evm_address: z
+      .string()
+      .trim()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Use a 0x address with 40 hex characters.")
+      .optional()
+      .or(z.literal("")),
+    xrpl_address: z
+      .string()
+      .trim()
+      .refine(isClassicAddress, "Use a classic XRPL address starting with r.")
+      .optional()
+      .or(z.literal("")),
+    payout_rail: PayoutRail.optional(),
+  });
 
 export async function GET() {
   const obs = await currentObserver();
-  return NextResponse.json({ observer: obs, entries: observerEntries(obs.id) });
+  return NextResponse.json({
+    observer: obs,
+    entries: observerEntries(obs.id),
+    stats: await observerStats(obs.id),
+    xrpl: observerCredential(obs.id),
+    account: accountFor(obs),
+    prizes: observerPrizes(obs.id),
+    passkey_wallet_enabled: passkeyWalletEnabled(),
+  });
 }
 
 export async function PUT(req: Request) {
+  if (isCrossSiteRequest(req)) {
+    return NextResponse.json({ error: "Cross-site request blocked." }, { status: 403 });
+  }
+  const text = await readBodyText(req, 4 * 1024);
+  if (text === null) return NextResponse.json({ error: "Request body too large." }, { status: 413 });
   const obs = await currentObserver();
-  const parsed = Patch.safeParse(await req.json().catch(() => null));
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  const parsed = Patch.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid profile" }, { status: 400 });
   }
-  const { evm_address, ...rest } = parsed.data;
-  const updated = updateObserver(obs.id, { ...rest, evm_address: evm_address === "" ? null : evm_address });
-  return NextResponse.json({ observer: updated });
+  const { evm_address, xrpl_address, ...rest } = parsed.data;
+  const nextXrpl = xrpl_address === undefined ? obs.xrpl_address : xrpl_address || undefined;
+  if ((rest.payout_rail ?? obs.payout_rail) === "xrpl" && !nextXrpl) {
+    return NextResponse.json({ error: "Add an XRPL address to get paid on XRPL." }, { status: 400 });
+  }
+  const updated = updateObserver(obs.id, {
+    ...rest,
+    evm_address: evm_address === "" ? null : evm_address,
+    xrpl_address: xrpl_address === "" ? null : xrpl_address,
+  });
+  if (evm_address && evm_address !== obs.evm_address) retryWinnerPayouts(obs.id);
+  await maybeIssueObserverCredential(obs.id);
+  return NextResponse.json({ observer: updated, xrpl: observerCredential(obs.id), account: accountFor(updated) });
 }

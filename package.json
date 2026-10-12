@@ -1,10 +1,30 @@
 {
   "name": "a-eye",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev -w @a-eye/web",
-    "build": "npm run build -w @a-eye/web",
-    "test": "npm run test -w @a-eye/web"
+    "build": "npm run build -w a-eye-mcp && npm run build -w @a-eye/web",
+    "start": "npm run start -w @a-eye/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "mcp": "npm run start -w a-eye-mcp",
+    "vapid:keys": "npm run vapid:keys -w @a-eye/web",
+    "db:backup": "node scripts/db-backup.mjs backup",
+    "db:restore": "node scripts/db-backup.mjs restore",
+    "db:backups": "node scripts/db-backup.mjs list",
+    "xrpl:setup": "tsx scripts/xrpl-setup.ts",
+    "xrpl:demo": "tsx scripts/xrpl-demo.ts",
+    "xrpl:vault": "tsx scripts/xrpl-vault-demo.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "xrpl": "5.3.0"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

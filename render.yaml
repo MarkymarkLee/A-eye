@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: a-eye
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: a-eye-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: A_EYE_DB_PATH
+        value: /var/data/a-eye.db
+      - key: A_EYE_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: A_EYE_PUBLIC_URL
+        value: https://a-eye-1zsv.onrender.com
+      - key: ALLOW_UNPAID_QUESTIONS
+        value: "1"
+      # Live service variables not listed as active entries:
+      # S3_BUCKET, S3_ENDPOINT, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+      # VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+      # CONTEXT_DEV_API_KEY, ELEVENLABS_API_KEY
+      # GEMINI_API_KEY, GEMINI_API_SECRET, GEMINI_ENV (demo-agent only)
+      # XRPL_TREASURY_SEED, XRPL_ISSUER_SEED

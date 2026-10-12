@@ -1,0 +1,128 @@
+{
+  "network": "devnet",
+  "ran_at": "2026-10-11T21:39:39.538Z",
+  "vault_id": "8E78EE4BC57DBAB5B37953282DDA76FEAD8BD67FB91A8E53D18BABFC7A970E00",
+  "share_mpt_id": "00000001752675EFEBE2AC2E0627104672D74FD24450040F",
+  "loan_broker_id": "EAC8CD1C981CAF730618FBD205D52B5D22A6F3B5F960612CF9E98122DAED94CE",
+  "loan_id": "90CC7B474F4AAF94FC8491E562EB657182A102EA7BB01D5AFC853ADA3F1769DD",
+  "vault_account": "rBgS3jvp9u6JSakLWwK2uQVpVXq2oP2KYJ",
+  "accounts": {
+    "broker": "r9mozqE39K1JJWM3t6DxMSxYa6hHBG8LHt",
+    "depositor": "rwryxXKfPyZcgDGxViHMTmu5UB7WFkn4Nh",
+    "sponsor": "rpeC2upapCgzH74LPTH4WhTxTgLCCRe5pQ",
+    "borrower": "rDZ3Q4yEAvCcpB999if9tdE6MRYrnzvsXW",
+    "observer": "rhRKNqxRarf5vF4jDatWUQVtXfZm2CuEH3"
+  },
+  "subscription_date": "2026-10-11T21:35:27.000Z",
+  "redemption_date": "2026-10-11T21:39:27.000Z",
+  "principal_drops": "20000000",
+  "interest_paid_drops": "78",
+  "assets_total_before_repay_drops": "40000000",
+  "assets_total_after_repay_drops": "40000070",
+  "shares_outstanding": "40000000",
+  "depositor_deposit_drops": "20000000",
+  "depositor_withdraw_drops": "20000035",
+  "assets_total_after_withdraw_drops": "20000035",
+  "shares_after_withdraw": "20000000",
+  "steps": [
+    {
+      "key": "vault_create",
+      "role": "broker",
+      "tx_type": "VaultCreate",
+      "label": "Create the closed-ended XRP vault",
+      "hash": "EF63612970AD08408D70376D2D02A9278F3948F29198C6315456A9BECCD0F191",
+      "amount_drops": null,
+      "at": "2026-10-11T21:34:49.324Z"
+    },
+    {
+      "key": "broker_set",
+      "role": "broker",
+      "tx_type": "LoanBrokerSet",
+      "label": "Configure A-eye as loan broker",
+      "hash": "B91F264C35D132752B5F6AEA91CD7BC8910BFC421CFE4CAA1572B86334815ECB",
+      "amount_drops": null,
+      "at": "2026-10-11T21:34:52.426Z"
+    },
+    {
+      "key": "cover_deposit",
+      "role": "broker",
+      "tx_type": "LoanBrokerCoverDeposit",
+      "label": "Post the loan-broker cover",
+      "hash": "7D0A3D965330EE974153EA974A37BD44132DEE0A059FEDC4BC73117CCC9F0007",
+      "amount_drops": "5000000",
+      "at": "2026-10-11T21:34:56.548Z"
+    },
+    {
+      "key": "vault_deposit",
+      "role": "depositor",
+      "tx_type": "VaultDeposit",
+      "label": "Deposit XRP into the vault",
+      "hash": "F949E8EB000B33D2CC25869A3B14A7D3F95E9D47F93160D9A547E59C097C6256",
+      "amount_drops": "20000000",
+      "at": "2026-10-11T21:35:03.679Z"
+    },
+    {
+      "key": "sponsor_deposit",
+      "role": "sponsor",
+      "tx_type": "VaultDeposit",
+      "label": "Keep sponsor XRP invested in the vault",
+      "hash": "2D8CEED32A785162446220BC0346B76D6FF57FFABE821E17E323CFDDA9A94574",
+      "amount_drops": "20000000",
+      "at": "2026-10-11T21:35:10.803Z"
+    },
+    {
+      "key": "loan_set",
+      "role": "broker",
+      "tx_type": "LoanSet",
+      "label": "Create the borrower's XRP loan",
+      "hash": "82F77415FBA8FDE5CE2925F642A0797789B8343827164065870D7438C1223FE7",
+      "amount_drops": "20000000",
+      "at": "2026-10-11T21:35:38.130Z"
+    },
+    {
+      "key": "bounty_pot",
+      "role": "borrower",
+      "tx_type": "EscrowCreate",
+      "label": "Escrow the XRP bounty for the human observer",
+      "hash": "A1AD294476DC0B112776CE9E06AD6CB9CF16BC781F60F72D17DFBF8568B5E22B",
+      "amount_drops": "5000000",
+      "at": "2026-10-11T21:35:45.260Z"
+    },
+    {
+      "key": "bounty_paid",
+      "role": "observer",
+      "tx_type": "EscrowFinish",
+      "label": "Release the bounty to the human observer",
+      "hash": "7AED6F22AF805CF01A897569E31E2BD5139593DF2C675172E5410B8A5CA9C3DF",
+      "amount_drops": "5000000",
+      "at": "2026-10-11T21:35:52.385Z"
+    },
+    {
+      "key": "loan_pay",
+      "role": "borrower",
+      "tx_type": "LoanPay",
+      "label": "Repay principal, interest, and service fee",
+      "hash": "064BDF7EE35AA5B78A5C99621EF4B31E3C36FADED219BBC9EDC7A05ED330299F",
+      "amount_drops": "20010078",
+      "at": "2026-10-11T21:35:55.490Z"
+    },
+    {
+      "key": "loan_delete",
+      "role": "borrower",
+      "tx_type": "LoanDelete",
+      "label": "Close the repaid loan",
+      "hash": "021E1E6C8858E42B23B7409F004636174CEB967DB1603F7B75AD9FA34FB2E382",
+      "amount_drops": null,
+      "at": "2026-10-11T21:35:59.603Z"
+    },
+    {
+      "key": "vault_withdraw",
+      "role": "depositor",
+      "tx_type": "VaultWithdraw",
+      "label": "Redeem vault shares at maturity",
+      "hash": "6A29B0735D21EF8E01EE33761929285EA5608150B5B671F86C1653E6B85B220E",
+      "amount_drops": "20000035",
+      "at": "2026-10-11T21:39:39.535Z"
+    }
+  ]
+}

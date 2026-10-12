@@ -1,7 +1,7 @@
 import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /*
@@ -12,7 +12,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
  */
 
 const bucket = process.env.S3_BUCKET;
-const localDir = path.join(process.cwd(), ".data", "uploads");
+const localDir = process.env.A_EYE_UPLOAD_DIR ?? path.join(/* turbopackIgnore: true */ process.cwd(), ".data", "uploads");
 
 const s3 = bucket
   ? new S3Client({
@@ -24,6 +24,22 @@ const s3 = bucket
 
 export const storageMode = s3 ? "s3" : "local";
 
+let reachabilityCache: { checkedAt: number; reachable: boolean } | undefined;
+
+export async function storageReachable(): Promise<boolean | null> {
+  if (!s3 || !bucket) return null;
+  if (reachabilityCache && Date.now() - reachabilityCache.checkedAt < 60_000) {
+    return reachabilityCache.reachable;
+  }
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: bucket }), { abortSignal: AbortSignal.timeout(3000) });
+    reachabilityCache = { checkedAt: Date.now(), reachable: true };
+  } catch {
+    reachabilityCache = { checkedAt: Date.now(), reachable: false };
+  }
+  return reachabilityCache.reachable;
+}
+
 const safeKey = (key: string) => /^[a-z0-9/_-]+\.jpg$/i.test(key) && !key.includes("..");
 
 export async function putImage(key: string, bytes: Uint8Array, contentType: string) {
@@ -31,7 +47,7 @@ export async function putImage(key: string, bytes: Uint8Array, contentType: stri
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes, ContentType: contentType }));
     return;
   }
-  const file = path.join(localDir, key);
+  const file = path.join(/* turbopackIgnore: true */ localDir, key);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, bytes);
 }
@@ -48,7 +64,7 @@ export async function imageUrl(key: string, origin: string) {
 export async function readLocalImage(key: string) {
   if (s3 || !safeKey(key)) return undefined;
   try {
-    return await readFile(path.join(localDir, key));
+    return await readFile(path.join(/* turbopackIgnore: true */ localDir, key));
   } catch {
     return undefined;
   }
